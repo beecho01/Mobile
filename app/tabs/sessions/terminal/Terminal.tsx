@@ -1435,7 +1435,15 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel="Clear selection"
-                  onPress={handleClearSelection}
+                  onPress={() => {
+                    try {
+                      webViewRef.current?.injectJavaScript(
+                        `terminal.clearSelection(); window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} })); true;`,
+                      );
+                      setShowSelectionToolbar(false);
+                      setSelectionCopied(false);
+                    } catch (e) {}
+                  }}
                   style={{
                     paddingHorizontal: 10,
                     paddingVertical: 8,
