@@ -1353,53 +1353,6 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               </TouchableOpacity>
             )}
 
-          {/* Selection mode toggle button */}
-          {isVisible &&
-            connectionState === "connected" &&
-            !totpRequired &&
-            !showAuthDialog &&
-            hostKeyVerification === null && (
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel={selectionMode ? "Exit selection mode" : "Enter selection mode"}
-                onPress={() => {
-                  const newMode = !selectionMode;
-                  setSelectionMode(newMode);
-                  webViewRef.current?.injectJavaScript(
-                    `window.setSelectionMode(${newMode}); true;`,
-                  );
-                  if (newMode) {
-                    showToast.info("Selection mode: drag to select text");
-                  } else {
-                    showToast.info("Scroll mode: drag to scroll");
-                    setShowSelectionToolbar(false);
-                    setSelectionCopied(false);
-                  }
-                }}
-                style={{
-                  position: "absolute",
-                  left: 14,
-                  bottom: 16,
-                  width: 40,
-                  height: 40,
-                  borderRadius: 0,
-                  backgroundColor: BACKGROUNDS.CARD,
-                  borderWidth: 1,
-                  borderColor: selectionMode ? ACCENT : "rgba(255,255,255,0.2)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  zIndex: 20,
-                  shadowColor: "#000",
-                  shadowOpacity: 0.3,
-                  shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 3 },
-                  elevation: 6,
-                }}
-              >
-                <Copy size={18} color={selectionMode ? ACCENT : "rgba(255,255,255,0.5)"} />
-              </TouchableOpacity>
-            )}
-
           {/* Floating selection toolbar */}
           {showSelectionToolbar &&
             isVisible &&
