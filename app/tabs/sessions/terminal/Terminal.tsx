@@ -648,7 +648,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         if (dragCurrentCell) {
           var dims = terminal._core._renderService.dimensions;
           if (dims) {
-            y = dragCurrentCell.row * dims.css.cell.height + 40;
+            y = dragCurrentCell.viewportRow * dims.css.cell.height + 40;
           }
         }
         window.ReactNativeWebView.postMessage(JSON.stringify({
