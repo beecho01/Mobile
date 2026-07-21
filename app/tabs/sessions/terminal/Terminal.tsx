@@ -943,6 +943,16 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       if (terminal.getSelection()) refreshSelectionUi(false);
     });
 
+    window.copyTerminalSelection = function() {
+      var text = terminal.getSelection();
+      if (text && window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'copySelection',
+          data: { text: text }
+        }));
+      }
+    };
+
     window.clearTerminalSelection = function() {
       terminal.clearSelection();
       hideSelectionHandles();
