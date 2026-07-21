@@ -1177,6 +1177,81 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       [totpRequired, showAuthDialog, hostKeyVerification, isSelecting],
     );
 
+    // Copy the current terminal selection to the clipboard
+    const handleCopySelection = useCallback(async () => {
+      try {
+        const result = await webViewRef.current?.injectJavaScript(
+          `window.ReactNativeWebView ? window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'getSelection' })) : ''; terminal.getSelection(); true;`,
+        );
+        // Actually, we need to get the selection from the WebView. Let's use a different approach:
+        // Inject JS that reads the selection and posts it back, but since injectJavaScript returns a string on Android,
+        // we can capture it directly.
+      } catch (e) {}
+    }, []);
+
+    // Copy selection via WebView injection (returns the selected text on Android)
+    const handleCopySelectionDirect = useCallback(() => {
+      try {
+        webViewRef.current?.injectJavaScript(
+          `window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'copySelection', data: { text: terminal.getSelection() } })); true;`,
+        );
+      } catch (e) {}
+    }, []);
+
+    // Handle the copySelection message from WebView
+    const handleCopyFromWebView = useCallback(async (text: string) => {
+      if (text && text.length > 0) {
+        await Clipboard.copyAsStringAsync(text);
+        setSelectionCopied(true);
+        showToast.success("Copied to clipboard");
+        setTimeout(() => {
+          setSelectionCopied(false);
+          setShowSelectionToolbar(false);
+          // Clear the selection in the WebView
+          webViewRef.current?.injectJavaScript(`terminal.clearSelection(); true;`);
+          webViewRef.current?.injectJavaScript(
+            `window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} })); true;`
+          );
+        }, 1200);
+      }
+    }, []);
+
+    // Select all text in the terminal
+    const handleSelectAll = useCallback(() => {
+      try {
+        webViewRef.current?.injectJavaScript(
+          `terminal.selectAll(); window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionToolbar', data: { x: window.innerWidth / 2, y: 40 } })); true;`,
+        );
+      } catch (e) {}
+    }, []);
+
+    // Clear selection
+    const handleClearSelection = useCallback(() => {
+      try {
+        webViewRef.current?.injectJavaScript(
+          `terminal.clearSelection(); window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} })); true;`,
+        );
+        setShowSelectionToolbar(false);
+        setSelectionCopied(false);
+      } catch (e) {}
+    }, []);
+
+    // Toggle selection mode
+    const handleToggleSelectionMode = useCallback(() => {
+      const newMode = !selectionMode;
+      setSelectionMode(newMode);
+      webViewRef.current?.injectJavaScript(
+        `window.setSelectionMode(${newMode}); true;`,
+      );
+      if (newMode) {
+        showToast.info("Selection mode: drag to select text");
+      } else {
+        showToast.info("Scroll mode: drag to scroll");
+        setShowSelectionToolbar(false);
+        setSelectionCopied(false);
+      }
+    }, [selectionMode]);
+
     return (
       <View
         style={{
