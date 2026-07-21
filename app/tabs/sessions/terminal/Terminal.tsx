@@ -539,7 +539,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       });
     }
 
-    terminal.onScroll(scheduleScrollStateUpdate);
+    terminal.onScroll(function() {
+      scheduleScrollStateUpdate();
+      scheduleScrollHandleRefresh();
+    });
 
     // connectionEpoch is incremented each time notifyConnected fires.
     // The write callback captures its epoch at call time; if it no longer
