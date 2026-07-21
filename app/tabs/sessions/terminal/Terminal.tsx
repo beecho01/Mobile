@@ -619,128 +619,380 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       return false;
     }, { passive: false });
 
-    let selectionEndTimeout = null;
-    let isCurrentlySelecting = false;
-    let lastInteractionTime = Date.now();
-    let touchStartTime = 0;
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let hasMoved = false;
-    let longPressTimeout = null;
+    // In-WebView selection model. xterm.js renders to canvas so Android cannot
+    // attach its native selection handles; this code implements Termius-style
+    // draggable handles, long-press/double/triple tap selection gestures, and
+    // a Copy / Paste / Select All toolbar entirely inside the WebView.
+    var isCurrentlySelecting = false;
+    var activeHandle = null;
+    var fixedBoundary = null;
+    var latestHandleTouch = null;
+    var autoScrollTimer = null;
+    var lastTapTime = 0;
+    var lastTapX = 0;
+    var lastTapY = 0;
+    var tapCount = 0;
 
-    terminalElement.addEventListener('touchstart', (e) => {
-      lastInteractionTime = Date.now();
-      touchStartTime = Date.now();
-      hasMoved = false;
-
-      if (e.touches && e.touches.length > 0) {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-      }
-
-      if (longPressTimeout) {
-        clearTimeout(longPressTimeout);
-      }
-
-      longPressTimeout = setTimeout(() => {
-        if (!hasMoved) {
-          if (!isCurrentlySelecting) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
-            isCurrentlySelecting = true;
-          }
-        }
-      }, 350);
-    }, { passive: true });
-
-    terminalElement.addEventListener('touchmove', (e) => {
-      if (e.touches && e.touches.length > 0) {
-        const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-        const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-
-        if (deltaX > 10 || deltaY > 10) {
-          hasMoved = true;
-          if (longPressTimeout) {
-            clearTimeout(longPressTimeout);
-            longPressTimeout = null;
-          }
-        }
-      }
-    }, { passive: true });
-
-    terminalElement.addEventListener('touchend', () => {
-      if (longPressTimeout) {
-        clearTimeout(longPressTimeout);
-        longPressTimeout = null;
-      }
-
-      const touchDuration = Date.now() - touchStartTime;
-
-      setTimeout(() => {
-        const selection = terminal.getSelection();
-        const hasSelection = selection && selection.length > 0;
-
-        if (hasSelection) {
-          lastInteractionTime = Date.now();
-          if (!isCurrentlySelecting) {
-            isCurrentlySelecting = true;
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
-          }
-        } else if (!isCurrentlySelecting && (touchDuration < 350 || hasMoved)) {
-          lastInteractionTime = Date.now();
-          checkIfDoneSelecting();
-        }
-      }, 100);
-    });
-
-    terminalElement.addEventListener('mousedown', (e) => {
-      lastInteractionTime = Date.now();
-    });
-
-    terminalElement.addEventListener('mouseup', () => {
-      lastInteractionTime = Date.now();
-      checkIfDoneSelecting();
-    });
-
-    function checkIfDoneSelecting() {
-      if (selectionEndTimeout) {
-        clearTimeout(selectionEndTimeout);
-      }
-
-      selectionEndTimeout = setTimeout(() => {
-        const selection = terminal.getSelection();
-        const hasSelection = selection && selection.length > 0;
-
-        if (hasSelection) {
-          if (!isCurrentlySelecting) {
-            isCurrentlySelecting = true;
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
-          }
-        } else if (isCurrentlySelecting) {
-          const timeSinceLastInteraction = Date.now() - lastInteractionTime;
-          if (timeSinceLastInteraction >= 150) {
-            isCurrentlySelecting = false;
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
-          } else {
-            checkIfDoneSelecting();
-          }
-        }
-      }, 100);
+    function createHandle(kind) {
+      var handle = document.createElement('div');
+      handle.className = 'termix-selection-handle termix-selection-handle-' + kind;
+      handle.setAttribute('role', 'slider');
+      handle.setAttribute('aria-label', kind === 'start' ? 'Selection start' : 'Selection end');
+      var stem = document.createElement('div');
+      stem.className = 'termix-selection-handle-stem';
+      var knob = document.createElement('div');
+      knob.className = 'termix-selection-handle-knob';
+      handle.appendChild(stem);
+      handle.appendChild(knob);
+      document.body.appendChild(handle);
+      return handle;
     }
 
-    terminal.onSelectionChange(() => {
-      const selection = terminal.getSelection();
-      const hasSelection = selection && selection.length > 0;
+    var startHandle = createHandle('start');
+    var endHandle = createHandle('end');
+    var termixToolbar = document.getElementById('termix-toolbar');
+    var termixBody = document.body;
 
-      if (hasSelection) {
-        lastInteractionTime = Date.now();
-        if (!isCurrentlySelecting) {
-          isCurrentlySelecting = true;
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
-        }
-      } else if (isCurrentlySelecting) {
-        lastInteractionTime = Date.now();
-        checkIfDoneSelecting();
+    function hideHandles() {
+      startHandle.style.display = 'none';
+      endHandle.style.display = 'none';
+    }
+
+    function getCellDimensions() {
+      try {
+        return terminal._core._renderService.dimensions.css.cell;
+      } catch (e) {
+        return null;
       }
+    }
+
+    function pixelToBufferCell(x, y) {
+      var rect = terminalElement.getBoundingClientRect();
+      var cell = getCellDimensions();
+      if (!cell || !cell.width || !cell.height) return null;
+      var viewportRow = Math.floor((y - rect.top - 4) / cell.height);
+      var col = Math.floor((x - rect.left - 4) / cell.width);
+      col = Math.max(0, Math.min(terminal.cols - 1, col));
+      viewportRow = Math.max(0, Math.min(terminal.rows - 1, viewportRow));
+      return {
+        x: col,
+        y: terminal.buffer.active.viewportY + viewportRow
+      };
+    }
+
+    function compareCells(a, b) {
+      if (a.y !== b.y) return a.y - b.y;
+      return a.x - b.x;
+    }
+
+    function previousCell(cell) {
+      if (cell.x > 0) return { x: cell.x - 1, y: cell.y };
+      return { x: terminal.cols - 1, y: Math.max(0, cell.y - 1) };
+    }
+
+    function nextCell(cell) {
+      if (cell.x < terminal.cols - 1) return { x: cell.x + 1, y: cell.y };
+      return { x: 0, y: cell.y + 1 };
+    }
+
+    function selectRange(start, endExclusive) {
+      if (compareCells(start, endExclusive) >= 0) return;
+      var length = ((endExclusive.y - start.y) * terminal.cols) +
+        (endExclusive.x - start.x);
+      terminal.select(start.x, start.y, Math.max(1, length));
+    }
+
+    function isWordCharacter(character) {
+      return /[A-Za-z0-9_@#$%&+.,:;=-]/.test(character || '');
+    }
+
+    function selectWordAt(clientX, clientY) {
+      var cell = pixelToBufferCell(clientX, clientY);
+      if (!cell) return;
+      var line = terminal.buffer.active.getLine(cell.y);
+      if (!line) return;
+      var text = line.translateToString(false);
+      if (!text || cell.x >= text.length) return;
+      var left = cell.x;
+      var right = cell.x;
+      if (!isWordCharacter(text.charAt(cell.x))) {
+        if (left > 0 && isWordCharacter(text.charAt(left - 1))) {
+          left -= 1;
+          right = left;
+        } else {
+          terminal.select(cell.x, cell.y, 1);
+          return;
+        }
+      }
+      while (left > 0 && isWordCharacter(text.charAt(left - 1))) left -= 1;
+      while (right + 1 < text.length && isWordCharacter(text.charAt(right + 1))) right += 1;
+      terminal.select(left, cell.y, right - left + 1);
+    }
+
+    function selectLineAt(clientX, clientY) {
+      var cell = pixelToBufferCell(clientX, clientY);
+      if (!cell) return;
+      var line = terminal.buffer.active.getLine(cell.y);
+      if (!line) return;
+      var text = line.translateToString(true);
+      terminal.select(0, cell.y, Math.max(1, text.length));
+    }
+
+    function positionHandle(handle, point, isEnd) {
+      var cell = getCellDimensions();
+      if (!cell) return false;
+      var viewportRow = point.y - terminal.buffer.active.viewportY;
+      if (viewportRow < 0 || viewportRow >= terminal.rows) {
+        handle.style.display = 'none';
+        return false;
+      }
+      var rect = terminalElement.getBoundingClientRect();
+      var boundaryX = point.x;
+      var boundaryRow = viewportRow;
+      if (isEnd && boundaryX === 0 && boundaryRow > 0) {
+        boundaryX = terminal.cols;
+        boundaryRow -= 1;
+      }
+      handle.style.left = (rect.left + 4 + boundaryX * cell.width) + 'px';
+      handle.style.top = (rect.top + 4 + (boundaryRow + 1) * cell.height - 4) + 'px';
+      handle.style.display = 'block';
+      return true;
+    }
+
+    function showToolbarNear(position) {
+      if (!termixToolbar) return;
+      var cell = getCellDimensions();
+      var rect = terminalElement.getBoundingClientRect();
+      var viewportWidth = window.innerWidth;
+      var y = 12;
+      if (cell && position) {
+        var viewportRow = position.start.y - terminal.buffer.active.viewportY;
+        y = Math.max(8, rect.top + viewportRow * cell.height - 56);
+      }
+      termixToolbar.classList.add('visible');
+      // Anchor on a small delay so toolbar width is final.
+      requestAnimationFrame(function() {
+        var barWidth = termixToolbar.offsetWidth || 240;
+        var left = Math.max(8, Math.min(viewportWidth / 2 - barWidth / 2, viewportWidth - barWidth - 8));
+        termixToolbar.style.left = left + 'px';
+        termixToolbar.style.top = y + 'px';
+      });
+    }
+
+    function hideToolbar() {
+      if (termixToolbar) termixToolbar.classList.remove('visible');
+    }
+
+    function refreshSelectionUi(showToolbar) {
+      var text = terminal.getSelection();
+      var position = terminal.getSelectionPosition();
+      if (!text || !position) {
+        hideHandles();
+        hideToolbar();
+        isCurrentlySelecting = false;
+        return;
+      }
+      isCurrentlySelecting = true;
+      positionHandle(startHandle, position.start, false);
+      positionHandle(endHandle, position.end, true);
+      if (showToolbar) showToolbarNear(position);
+      else hideToolbar();
+    }
+
+    function updateSelectionFromHandle(clientX, clientY) {
+      if (!activeHandle || !fixedBoundary) return;
+      var target = pixelToBufferCell(clientX, clientY);
+      if (!target) return;
+      if (activeHandle === 'start') {
+        if (compareCells(target, fixedBoundary) >= 0) {
+          target = previousCell(fixedBoundary);
+        }
+        selectRange(target, fixedBoundary);
+      } else {
+        var endExclusive = nextCell(target);
+        if (compareCells(endExclusive, fixedBoundary) <= 0) {
+          endExclusive = nextCell(fixedBoundary);
+        }
+        selectRange(fixedBoundary, endExclusive);
+      }
+      refreshSelectionUi(true);
+    }
+
+    function stopAutoScroll() {
+      if (autoScrollTimer) {
+        clearInterval(autoScrollTimer);
+        autoScrollTimer = null;
+      }
+    }
+
+    function updateAutoScroll(clientY) {
+      stopAutoScroll();
+      var rect = terminalElement.getBoundingClientRect();
+      var direction = clientY < rect.top + 48 ? -1 :
+        (clientY > rect.bottom - 48 ? 1 : 0);
+      if (!direction) return;
+      autoScrollTimer = setInterval(function() {
+        if (!activeHandle || !latestHandleTouch) return;
+        terminal.scrollLines(direction);
+        updateSelectionFromHandle(latestHandleTouch.x, latestHandleTouch.y);
+      }, 70);
+    }
+
+    function beginHandleDrag(kind, event) {
+      var position = terminal.getSelectionPosition();
+      if (!position || !event.touches || !event.touches.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activeHandle = kind;
+      fixedBoundary = kind === 'start' ? position.end : position.start;
+      latestHandleTouch = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY
+      };
+      termixBody.classList.add('termix-handle-dragging');
+      hideToolbar();
+    }
+
+    function moveHandle(event) {
+      if (!activeHandle || !event.touches || !event.touches.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      latestHandleTouch = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY
+      };
+      updateSelectionFromHandle(latestHandleTouch.x, latestHandleTouch.y);
+      updateAutoScroll(latestHandleTouch.y);
+    }
+
+    function endHandleDrag(event) {
+      if (!activeHandle) return;
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      activeHandle = null;
+      fixedBoundary = null;
+      latestHandleTouch = null;
+      stopAutoScroll();
+      termixBody.classList.remove('termix-handle-dragging');
+      refreshSelectionUi(true);
+    }
+
+    startHandle.addEventListener('touchstart', function(e) { beginHandleDrag('start', e); }, { passive: false });
+    endHandle.addEventListener('touchstart', function(e) { beginHandleDrag('end', e); }, { passive: false });
+    document.addEventListener('touchmove', moveHandle, { passive: false, capture: true });
+    document.addEventListener('touchend', endHandleDrag, { passive: false, capture: true });
+    document.addEventListener('touchcancel', endHandleDrag, { passive: false, capture: true });
+
+    // Word/line gestures over the terminal area.
+    var gestureStartX = 0;
+    var gestureStartY = 0;
+    var gestureMoved = false;
+    var longPressTimer = null;
+
+    terminalElement.addEventListener('touchstart', function(event) {
+      if (!event.touches || event.touches.length !== 1) return;
+      if (event.target && event.target.closest && event.target.closest('.termix-selection-handle')) return;
+      gestureStartX = event.touches[0].clientX;
+      gestureStartY = event.touches[0].clientY;
+      gestureMoved = false;
+      if (longPressTimer) clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(function() {
+        if (!gestureMoved && !activeHandle) {
+          selectWordAt(gestureStartX, gestureStartY);
+        }
+      }, 450);
+    }, { passive: true });
+
+    terminalElement.addEventListener('touchmove', function(event) {
+      if (!event.touches || event.touches.length !== 1) return;
+      var dx = Math.abs(event.touches[0].clientX - gestureStartX);
+      var dy = Math.abs(event.touches[0].clientY - gestureStartY);
+      if (dx > 12 || dy > 12) {
+        gestureMoved = true;
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+    }, { passive: true });
+
+    terminalElement.addEventListener('touchend', function(event) {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      if (gestureMoved || activeHandle) return;
+      if (!event.changedTouches || event.changedTouches.length !== 1) return;
+      var touch = event.changedTouches[0];
+      var now = Date.now();
+      var nearLastTap = Math.abs(touch.clientX - lastTapX) < 28 &&
+        Math.abs(touch.clientY - lastTapY) < 28;
+      if (now - lastTapTime < 360 && nearLastTap) {
+        tapCount += 1;
+      } else {
+        tapCount = 1;
+      }
+      lastTapTime = now;
+      lastTapX = touch.clientX;
+      lastTapY = touch.clientY;
+      if (tapCount === 2) {
+        event.preventDefault();
+        setTimeout(function() { selectWordAt(touch.clientX, touch.clientY); }, 0);
+      } else if (tapCount >= 3) {
+        event.preventDefault();
+        tapCount = 0;
+        setTimeout(function() { selectLineAt(touch.clientX, touch.clientY); }, 0);
+      }
+    }, { passive: false });
+
+    // In-WebView toolbar actions.
+    function postAction(type, data) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: type,
+          data: data || {}
+        }));
+      }
+    }
+
+    if (termixToolbar) {
+      termixToolbar.addEventListener('click', function(event) {
+        var target = event.target;
+        if (!target || !target.getAttribute) return;
+        var action = target.getAttribute('data-action');
+        if (!action) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (action === 'copy') {
+          var text = terminal.getSelection();
+          if (text) postAction('terminal:request-copy', { text: text });
+        } else if (action === 'paste') {
+          postAction('terminal:request-paste', {});
+        } else if (action === 'select-all') {
+          terminal.selectAll();
+        }
+      });
+    }
+
+    terminal.onSelectionChange(function() {
+      if (activeHandle) {
+        refreshSelectionUi(false);
+        return;
+      }
+      if (terminal.getSelection()) {
+        // Show toolbar shortly after the selection settles.
+        setTimeout(function() {
+          if (terminal.getSelection()) refreshSelectionUi(true);
+        }, 140);
+      } else {
+        refreshSelectionUi(false);
+      }
+    });
+
+    terminal.onScroll(function() {
+      if (terminal.getSelection()) refreshSelectionUi(false);
     });
 
     function handleResize() {
