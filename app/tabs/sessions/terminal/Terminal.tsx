@@ -425,6 +425,13 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     }
 
   </style>
+</body>
+<div id="termix-toolbar">
+  <div class="termix-toolbar-button" data-action="copy">Copy</div>
+  <div class="termix-toolbar-button" data-action="paste">Paste</div>
+  <div class="termix-toolbar-button" data-action="select-all">Select All</div>
+</div>
+</html>
 </head>
 <body>
   <div id="terminal"></div>
