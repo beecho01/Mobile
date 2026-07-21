@@ -849,6 +849,25 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
           case "scrollState":
             setShowScrollToBottomButton(!message.data.isAtBottom);
             break;
+
+          case "terminal:request-copy":
+            if (message.data && typeof message.data.text === "string") {
+              Clipboard.setStringAsync(message.data.text).catch(() => {
+                showToast.error("Failed to copy");
+              });
+            }
+            break;
+
+          case "terminal:request-paste":
+            try {
+              const text = await Clipboard.getStringAsync();
+              if (text) {
+                wsManagerRef.current?.sendInput(text);
+              }
+            } catch (error) {
+              showToast.error("Failed to paste");
+            }
+            break;
         }
       } catch (error) {
         console.error("[Terminal] Error parsing WebView message:", error);
