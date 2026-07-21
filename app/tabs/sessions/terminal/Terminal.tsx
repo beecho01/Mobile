@@ -1453,27 +1453,6 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
                   <Text style={{ color: TEXT_COLORS.PRIMARY, fontSize: 13, fontWeight: "600" }}>Select All</Text>
                 </TouchableOpacity>
 
-                <View style={{ width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.15)" }} />
-
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear selection"
-                  onPress={() => {
-                    try {
-                      webViewRef.current?.injectJavaScript(
-                        `window.clearTerminalSelection && window.clearTerminalSelection(); true;`,
-                      );
-                      setShowSelectionToolbar(false);
-                      setSelectionCopied(false);
-                    } catch (e) {}
-                  }}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                  }}
-                >
-                  <X size={16} color={TEXT_COLORS.SECONDARY} />
-                </TouchableOpacity>
               </View>
             )}
 
