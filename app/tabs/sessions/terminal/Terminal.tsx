@@ -560,6 +560,88 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     let touchStartY = 0;
     let hasMoved = false;
     let longPressTimeout = null;
+    // Drag-to-select state
+    let isDraggingSelection = false;
+    let dragStartCell = null;
+    let dragCurrentCell = null;
+    // Selection mode (toggled by user). When true, drag extends selection instead of scrolling.
+    let selectionModeActive = false;
+    window.setSelectionMode = function(active) {
+      selectionModeActive = active;
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'selectionModeChanged',
+          data: { active: active }
+        }));
+      }
+      if (!active) {
+        // Clear any active selection when exiting selection mode
+        terminal.clearSelection();
+        isCurrentlySelecting = false;
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
+        }
+      }
+    };
+    window.getSelectionMode = function() { return selectionModeActive; };
+
+    // Convert pixel coordinates to terminal cell coordinates
+    function pixelToCell(x, y) {
+      try {
+        var rect = terminalElement.getBoundingClientRect();
+        var dims = terminal._core._renderService.dimensions;
+        if (!dims) return null;
+        var cellWidth = dims.css.cell.width;
+        var cellHeight = dims.css.cell.height;
+        var offsetX = 4; // matches padding in #terminal
+        var offsetY = 4;
+        var col = Math.floor((x - rect.left - offsetX) / cellWidth);
+        var row = Math.floor((y - rect.top - offsetY) / cellHeight);
+        col = Math.max(0, Math.min(terminal.cols - 1, col));
+        row = Math.max(0, Math.min(terminal.rows - 1, row));
+        return { col: col, row: row };
+      } catch(e) {
+        return null;
+      }
+    }
+
+    // Extend selection from dragStartCell to a new cell
+    function extendSelectionToCell(cell) {
+      if (!dragStartCell || !cell) return;
+      dragCurrentCell = cell;
+      var startCol, startRow, endCol, endRow;
+      if (dragStartCell.row < cell.row || (dragStartCell.row === cell.row && dragStartCell.col <= cell.col)) {
+        startCol = dragStartCell.col;
+        startRow = dragStartCell.row;
+        endCol = cell.col;
+        endRow = cell.row;
+      } else {
+        startCol = cell.col;
+        startRow = cell.row;
+        endCol = dragStartCell.col;
+        endRow = dragStartCell.row;
+      }
+      terminal.select(startCol, startRow, endCol - startCol + 1);
+    }
+
+    function notifySelectionToolbar() {
+      var selection = terminal.getSelection();
+      if (selection && selection.length > 0 && window.ReactNativeWebView) {
+        // Position toolbar near the middle of the selection
+        var rect = terminalElement.getBoundingClientRect();
+        var y = 50;
+        if (dragCurrentCell) {
+          var dims = terminal._core._renderService.dimensions;
+          if (dims) {
+            y = dragCurrentCell.row * dims.css.cell.height + 40;
+          }
+        }
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'selectionToolbar',
+          data: { x: rect.width / 2, y: y }
+        }));
+      }
+    }
 
     terminalElement.addEventListener('touchstart', (e) => {
       lastInteractionTime = Date.now();
@@ -575,9 +657,32 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         clearTimeout(longPressTimeout);
       }
 
+      // In selection mode, immediately start drag selection
+      if (selectionModeActive) {
+        var cell = pixelToCell(touchStartX, touchStartY);
+        if (cell) {
+          dragStartCell = cell;
+          dragCurrentCell = cell;
+          isDraggingSelection = true;
+          terminal.select(cell.col, cell.row, 1);
+          if (!isCurrentlySelecting) {
+            isCurrentlySelecting = true;
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
+          }
+        }
+        return;
+      }
+
       longPressTimeout = setTimeout(() => {
         if (!hasMoved) {
           if (!isCurrentlySelecting) {
+            // Long press: start selection at the touched cell
+            var cell = pixelToCell(touchStartX, touchStartY);
+            if (cell) {
+              dragStartCell = cell;
+              dragCurrentCell = cell;
+              isDraggingSelection = true;
+            }
             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
             isCurrentlySelecting = true;
           }
@@ -587,14 +692,24 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
     terminalElement.addEventListener('touchmove', (e) => {
       if (e.touches && e.touches.length > 0) {
-        const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-        const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+        var clientX = e.touches[0].clientX;
+        var clientY = e.touches[0].clientY;
+        var deltaX = Math.abs(clientX - touchStartX);
+        var deltaY = Math.abs(clientY - touchStartY);
 
         if (deltaX > 10 || deltaY > 10) {
           hasMoved = true;
           if (longPressTimeout) {
             clearTimeout(longPressTimeout);
             longPressTimeout = null;
+          }
+        }
+
+        // If we're dragging a selection (either from long-press or selection mode), extend it
+        if (isDraggingSelection) {
+          var cell = pixelToCell(clientX, clientY);
+          if (cell) {
+            extendSelectionToCell(cell);
           }
         }
       }
@@ -606,11 +721,11 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         longPressTimeout = null;
       }
 
-      const touchDuration = Date.now() - touchStartTime;
+      var touchDuration = Date.now() - touchStartTime;
 
       setTimeout(() => {
-        const selection = terminal.getSelection();
-        const hasSelection = selection && selection.length > 0;
+        var selection = terminal.getSelection();
+        var hasSelection = selection && selection.length > 0;
 
         if (hasSelection) {
           lastInteractionTime = Date.now();
@@ -618,10 +733,15 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             isCurrentlySelecting = true;
             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
           }
+          // Show the floating toolbar
+          notifySelectionToolbar();
         } else if (!isCurrentlySelecting && (touchDuration < 350 || hasMoved)) {
           lastInteractionTime = Date.now();
           checkIfDoneSelecting();
         }
+
+        // End drag selection
+        isDraggingSelection = false;
       }, 100);
     });
 
@@ -640,18 +760,21 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       }
 
       selectionEndTimeout = setTimeout(() => {
-        const selection = terminal.getSelection();
-        const hasSelection = selection && selection.length > 0;
+        var selection = terminal.getSelection();
+        var hasSelection = selection && selection.length > 0;
 
         if (hasSelection) {
           if (!isCurrentlySelecting) {
             isCurrentlySelecting = true;
             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
           }
+          notifySelectionToolbar();
         } else if (isCurrentlySelecting) {
-          const timeSinceLastInteraction = Date.now() - lastInteractionTime;
+          var timeSinceLastInteraction = Date.now() - lastInteractionTime;
           if (timeSinceLastInteraction >= 150) {
             isCurrentlySelecting = false;
+            dragStartCell = null;
+            dragCurrentCell = null;
             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
           } else {
             checkIfDoneSelecting();
@@ -661,8 +784,8 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     }
 
     terminal.onSelectionChange(() => {
-      const selection = terminal.getSelection();
-      const hasSelection = selection && selection.length > 0;
+      var selection = terminal.getSelection();
+      var hasSelection = selection && selection.length > 0;
 
       if (hasSelection) {
         lastInteractionTime = Date.now();
