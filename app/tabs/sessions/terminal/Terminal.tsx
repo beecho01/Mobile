@@ -428,6 +428,11 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 </head>
 <body>
   <div id="terminal"></div>
+  <div id="termix-toolbar">
+    <div class="termix-toolbar-button" data-action="copy">Copy</div>
+    <div class="termix-toolbar-button" data-action="paste">Paste</div>
+    <div class="termix-toolbar-button" data-action="select-all">Select All</div>
+  </div>
 
   <script>
     const screenWidth = ${width};
