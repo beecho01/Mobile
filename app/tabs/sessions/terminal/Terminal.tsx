@@ -1570,7 +1570,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
                   onPress={() => {
                     try {
                       webViewRef.current?.injectJavaScript(
-                        `terminal.selectAll(); window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionToolbar', data: { x: window.innerWidth / 2, y: 40 } })); true;`,
+                        `window.selectAllTerminal && window.selectAllTerminal(); true;`,
                       );
                     } catch (e) {}
                   }}
