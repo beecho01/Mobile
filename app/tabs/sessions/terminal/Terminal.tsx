@@ -1313,7 +1313,20 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel={selectionMode ? "Exit selection mode" : "Enter selection mode"}
-                onPress={handleToggleSelectionMode}
+                onPress={() => {
+                  const newMode = !selectionMode;
+                  setSelectionMode(newMode);
+                  webViewRef.current?.injectJavaScript(
+                    `window.setSelectionMode(${newMode}); true;`,
+                  );
+                  if (newMode) {
+                    showToast.info("Selection mode: drag to select text");
+                  } else {
+                    showToast.info("Scroll mode: drag to scroll");
+                    setShowSelectionToolbar(false);
+                    setSelectionCopied(false);
+                  }
+                }}
                 style={{
                   position: "absolute",
                   left: 14,
