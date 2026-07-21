@@ -1181,17 +1181,6 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     );
 
     // Copy the current terminal selection to the clipboard
-    const handleCopySelection = useCallback(async () => {
-      try {
-        const result = await webViewRef.current?.injectJavaScript(
-          `window.ReactNativeWebView ? window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'getSelection' })) : ''; terminal.getSelection(); true;`,
-        );
-        // Actually, we need to get the selection from the WebView. Let's use a different approach:
-        // Inject JS that reads the selection and posts it back, but since injectJavaScript returns a string on Android,
-        // we can capture it directly.
-      } catch (e) {}
-    }, []);
-
     // Copy selection via WebView injection (returns the selected text on Android)
     const handleCopySelectionDirect = useCallback(() => {
       try {
