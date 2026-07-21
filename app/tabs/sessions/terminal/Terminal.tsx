@@ -797,6 +797,9 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             isCurrentlySelecting = false;
             dragStartCell = null;
             dragCurrentCell = null;
+            if (!selectionModeActive) {
+              terminalElement.classList.remove('selection-mode-active');
+            }
             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
           } else {
             checkIfDoneSelecting();
