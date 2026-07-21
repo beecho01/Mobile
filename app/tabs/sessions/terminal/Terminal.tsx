@@ -1410,6 +1410,33 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
                 <TouchableOpacity
                   accessibilityRole="button"
+                  accessibilityLabel="Paste clipboard"
+                  onPress={async () => {
+                    try {
+                      const clipboardText = await Clipboard.getStringAsync();
+                      if (clipboardText) {
+                        wsManagerRef.current?.sendInput(clipboardText);
+                        webViewRef.current?.injectJavaScript(
+                          `window.clearTerminalSelection && window.clearTerminalSelection(); true;`,
+                        );
+                        setShowSelectionToolbar(false);
+                      }
+                    } catch (error) {
+                      showToast.error("Failed to paste");
+                    }
+                  }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text style={{ color: TEXT_COLORS.PRIMARY, fontSize: 13, fontWeight: "600" }}>Paste</Text>
+                </TouchableOpacity>
+
+                <View style={{ width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.15)" }} />
+
+                <TouchableOpacity
+                  accessibilityRole="button"
                   accessibilityLabel="Select all"
                   onPress={() => {
                     try {
