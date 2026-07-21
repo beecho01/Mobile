@@ -932,6 +932,11 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     terminal.onSelectionChange(function() {
       if (toolbarTimer) clearTimeout(toolbarTimer);
       refreshSelectionUi(false);
+      // Force all xterm canvas layers to repaint together. This avoids stale
+      // glyph layers remaining visible after Android redraws the selection.
+      requestAnimationFrame(function() {
+        try { terminal.refresh(0, terminal.rows - 1); } catch (e) {}
+      });
       if (!activeHandle && terminal.getSelection()) {
         toolbarTimer = setTimeout(function() {
           refreshSelectionUi(true);
