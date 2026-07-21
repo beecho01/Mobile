@@ -346,10 +346,41 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       -moz-user-select: text;
     }
 
-    /* Android WebView must not turn a selection drag into viewport scrolling. */
-    #terminal.selection-mode-active,
-    #terminal.selection-mode-active .xterm,
-    #terminal.selection-mode-active .xterm-screen {
+    /* Canvas terminals cannot use Android's native selection handles, so we
+       provide touch-sized handles aligned to xterm's cell grid. */
+    .termix-selection-handle {
+      position: fixed;
+      display: none;
+      width: 44px;
+      height: 48px;
+      margin-left: -22px;
+      z-index: 1000;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .termix-selection-handle-stem {
+      position: absolute;
+      left: 20px;
+      top: 0;
+      width: 4px;
+      height: 16px;
+      border-radius: 2px;
+      background: ${ACCENT};
+    }
+    .termix-selection-handle-knob {
+      position: absolute;
+      left: 10px;
+      top: 12px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: ${ACCENT};
+      box-shadow: 0 2px 7px rgba(0,0,0,0.45);
+    }
+    body.termix-handle-dragging,
+    body.termix-handle-dragging #terminal,
+    body.termix-handle-dragging .xterm {
       touch-action: none !important;
       overscroll-behavior: none;
     }
