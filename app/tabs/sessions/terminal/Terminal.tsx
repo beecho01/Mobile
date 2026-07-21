@@ -792,13 +792,17 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         y = Math.max(8, rect.top + viewportRow * cell.height - 56);
       }
       termixToolbar.classList.add('visible');
-      // Anchor on a small delay so toolbar width is final.
+      // Wait for the next frame so the WebView has finished laying out the
+      // toolbar (Android may temporarily report zero width when the soft
+      // keyboard is opening). Then re-measure and position.
       requestAnimationFrame(function() {
-        if (!termixToolbar) return;
-        var barWidth = termixToolbar.offsetWidth || 240;
-        var left = Math.max(8, Math.min(viewportWidth / 2 - barWidth / 2, viewportWidth - barWidth - 8));
-        termixToolbar.style.left = left + 'px';
-        termixToolbar.style.top = y + 'px';
+        requestAnimationFrame(function() {
+          if (!termixToolbar) return;
+          var barWidth = termixToolbar.offsetWidth || 240;
+          var left = Math.max(8, Math.min(viewportWidth / 2 - barWidth / 2, viewportWidth - barWidth - 8));
+          termixToolbar.style.left = left + 'px';
+          termixToolbar.style.top = y + 'px';
+        });
       });
     }
 
