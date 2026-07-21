@@ -674,6 +674,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
       // In selection mode, immediately start drag selection
       if (selectionModeActive) {
+        e.preventDefault();
         var cell = pixelToCell(touchStartX, touchStartY);
         if (cell) {
           dragStartCell = cell;
