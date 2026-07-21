@@ -838,14 +838,6 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             );
             break;
 
-          case "selectionStart":
-            setIsSelecting(true);
-            break;
-
-          case "selectionEnd":
-            setIsSelecting(false);
-            break;
-
           case "scrollState":
             setShowScrollToBottomButton(!message.data.isAtBottom);
             break;
