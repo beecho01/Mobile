@@ -633,7 +633,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         endCol = dragStartCell.col;
         endRow = dragStartCell.row;
       }
-      terminal.select(startCol, startRow, endCol - startCol + 1);
+      // xterm's length is linear across the terminal buffer. Include every
+      // complete intervening row when the drag spans multiple lines.
+      var selectionLength = ((endRow - startRow) * terminal.cols) + (endCol - startCol) + 1;
+      terminal.select(startCol, startRow, Math.max(1, selectionLength));
     }
 
     function notifySelectionToolbar() {
