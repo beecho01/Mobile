@@ -444,7 +444,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       },
       allowTransparency: true,
       convertEol: true,
-      screenReaderMode: true,
+      // React Native already exposes terminal output through its dedicated
+      // accessibility view. xterm's DOM accessibility rows conflict with
+      // Android WebView text selection and can visibly duplicate terminal rows.
+      screenReaderMode: false,
       windowsMode: false,
       macOptionIsMeta: false,
       macOptionClickForcesSelection: false,
