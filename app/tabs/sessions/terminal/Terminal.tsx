@@ -1046,12 +1046,8 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             }
             break;
 
-          case "selectionModeChanged":
-            setSelectionMode(message.data.active);
-            if (!message.data.active) {
-              setShowSelectionToolbar(false);
-              setSelectionCopied(false);
-            }
+          case "selectionToolbarHide":
+            setShowSelectionToolbar(false);
             break;
 
           case "scrollState":
