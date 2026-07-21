@@ -792,17 +792,35 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       var cell = getCellDimensions();
       var rect = terminalElement.getBoundingClientRect();
       var viewportWidth = window.innerWidth;
-      var y = 12;
-      if (cell && position) {
-        // Anchor the toolbar above the topmost visible row of the selection.
-        // If the start row is off-screen above the viewport, anchor at the
-        // top of the terminal so the toolbar remains reachable.
-        var viewportRow = position.start.y - terminal.buffer.active.viewportY;
-        if (viewportRow < 0) viewportRow = 0;
-        y = Math.max(8, rect.top + viewportRow * cell.height - 56);
+      var viewportHeight = window.innerHeight;
+      // Anchor the toolbar relative to the topmost visible row of the
+      // selection. If the start row is off-screen above the viewport, anchor
+      // at the top of the terminal so the toolbar remains reachable.
+      var startViewportRow = position ? position.start.y - terminal.buffer.active.viewportY : 0;
+      if (startViewportRow < 0) startViewportRow = 0;
+      if (startViewportRow >= terminal.rows) startViewportRow = terminal.rows - 1;
+      var cellHeight = cell ? cell.height : 16;
+      var rowTop = rect.top + startViewportRow * cellHeight;
+      var rowBottom = rowTop + cellHeight;
+
+      // The toolbar sits 8px above the row by default. If the row is in the
+      // top half of the screen there is not enough space above, so anchor
+      // the toolbar just below the row instead. The two candidate positions
+      // are both clamped inside the WebView viewport so the toolbar never
+      // sits on top of the soft keyboard or off-screen.
+      var above = rowTop - 8;
+      var below = rowBottom + 8;
+      var maxTop = Math.max(8, viewportHeight - 56);
+      var y;
+      if (above >= 8) {
+        y = above;
+      } else if (below <= maxTop) {
+        y = below;
+      } else {
+        y = Math.max(8, Math.min(maxTop, rowTop));
       }
       termixToolbar.classList.add('visible');
-      // Wait for the next frame so the WebView has finished laying out the
+      // Wait for two frames so the WebView has finished laying out the
       // toolbar (Android may temporarily report zero width when the soft
       // keyboard is opening). Then re-measure and position.
       requestAnimationFrame(function() {
