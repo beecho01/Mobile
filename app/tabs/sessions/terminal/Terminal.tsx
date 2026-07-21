@@ -339,6 +339,75 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       -moz-user-select: text;
     }
 
+    .termix-selection-handle {
+      position: fixed;
+      display: none;
+      width: 44px;
+      height: 56px;
+      margin-left: -22px;
+      z-index: 1000;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .termix-selection-handle-stem {
+      position: absolute;
+      left: 20px;
+      top: 0;
+      width: 4px;
+      height: 22px;
+      border-radius: 2px;
+      background: ${ACCENT};
+    }
+    .termix-selection-handle-knob {
+      position: absolute;
+      left: 10px;
+      top: 18px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: ${ACCENT};
+      box-shadow: 0 2px 7px rgba(0,0,0,0.45);
+    }
+
+    #termix-toolbar {
+      position: fixed;
+      display: none;
+      z-index: 1001;
+      flex-direction: row;
+      align-items: stretch;
+      background: ${BACKGROUNDS.CARD};
+      border: 1px solid ${ACCENT};
+      border-radius: 4px;
+      padding: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #termix-toolbar.visible { display: flex; }
+    .termix-toolbar-button {
+      padding: 8px 14px;
+      color: ${TEXT_COLORS.PRIMARY};
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 56px;
+      text-align: center;
+    }
+    .termix-toolbar-button + .termix-toolbar-button {
+      border-left: 1px solid rgba(255,255,255,0.15);
+    }
+    .termix-toolbar-button:active { opacity: 0.7; }
+
+    body.termix-handle-dragging,
+    body.termix-handle-dragging #terminal,
+    body.termix-handle-dragging .xterm {
+      touch-action: none !important;
+      overscroll-behavior: none;
+    }
+
     input, textarea, [contenteditable], .xterm-helper-textarea {
       position: absolute !important;
       left: -9999px !important;
