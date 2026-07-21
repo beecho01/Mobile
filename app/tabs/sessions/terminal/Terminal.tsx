@@ -571,6 +571,8 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
     window.notifyConnected = function(fromBackground, isReattach) {
       connectionEpoch += 1;
+      hideHandles();
+      hideToolbar();
       terminal.clear();
       if (isReattach) {
         terminal.write('\\x1b[2J\\x1b[H\\x1b[?25h');
