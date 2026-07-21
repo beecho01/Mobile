@@ -715,10 +715,11 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         return;
       }
 
+      var selectionJustStarted = !isCurrentlySelecting;
       isCurrentlySelecting = true;
       positionHandle(startHandle, position.start, false);
       positionHandle(endHandle, position.end, true);
-      if (window.ReactNativeWebView) {
+      if (selectionJustStarted && window.ReactNativeWebView) {
         window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
       }
       if (showToolbar) notifySelectionToolbar(position);
