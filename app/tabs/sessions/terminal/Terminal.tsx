@@ -1006,8 +1006,20 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       }
     });
 
+    // Refresh handle and toolbar positions on every scroll tick. xterm's
+    // onSelectionChange only fires on selection mutation, so handles would
+    // otherwise remain fixed at the cell coordinates from the last paint.
+    var scrollHandleFrame = null;
+    function scheduleScrollHandleRefresh() {
+      if (scrollHandleFrame !== null) return;
+      scrollHandleFrame = requestAnimationFrame(function() {
+        scrollHandleFrame = null;
+        if (terminal.getSelection()) refreshSelectionUi(false);
+      });
+    }
     terminal.onScroll(function() {
-      if (terminal.getSelection()) refreshSelectionUi(false);
+      scheduleScrollStateUpdate();
+      scheduleScrollHandleRefresh();
     });
 
     function handleResize() {
