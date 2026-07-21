@@ -987,8 +987,8 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             });
             break;
 
-          case "selectionCopied":
-            // Already handled by the toolbar button; this is a fallback
+          case "copySelection":
+            handleCopyFromWebView(message.data.text);
             break;
 
           case "selectionModeChanged":
