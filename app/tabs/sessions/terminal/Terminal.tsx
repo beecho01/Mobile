@@ -991,6 +991,14 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             // Already handled by the toolbar button; this is a fallback
             break;
 
+          case "selectionModeChanged":
+            setSelectionMode(message.data.active);
+            if (!message.data.active) {
+              setShowSelectionToolbar(false);
+              setSelectionCopied(false);
+            }
+            break;
+
           case "scrollState":
             setShowScrollToBottomButton(!message.data.isAtBottom);
             break;
