@@ -1179,11 +1179,20 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         notifyForegrounded: () => {
           wsManagerRef.current?.notifyForegrounded();
         },
-        showToast.info("Scroll mode: drag to scroll");
-        setShowSelectionToolbar(false);
-        setSelectionCopied(false);
-      }
-    }, [selectionMode]);
+        scrollToBottom: () => {
+          try {
+            setShowScrollToBottomButton(false);
+            webViewRef.current?.injectJavaScript(
+              `window.resetScroll && window.resetScroll(); true;`,
+            );
+          } catch (e) {}
+        },
+        isSelecting: () => {
+          return isSelecting;
+        },
+      }),
+      [totpRequired, showAuthDialog, hostKeyVerification, isSelecting],
+    );
 
     return (
       <View
