@@ -605,10 +605,13 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         var offsetX = 4; // matches padding in #terminal
         var offsetY = 4;
         var col = Math.floor((x - rect.left - offsetX) / cellWidth);
-        var row = Math.floor((y - rect.top - offsetY) / cellHeight);
+        var viewportRow = Math.floor((y - rect.top - offsetY) / cellHeight);
         col = Math.max(0, Math.min(terminal.cols - 1, col));
-        row = Math.max(0, Math.min(terminal.rows - 1, row));
-        return { col: col, row: row };
+        viewportRow = Math.max(0, Math.min(terminal.rows - 1, viewportRow));
+        // terminal.select() expects a row in the full scrollback buffer, not
+        // a row relative to the currently visible viewport.
+        var bufferRow = terminal.buffer.active.viewportY + viewportRow;
+        return { col: col, row: bufferRow, viewportRow: viewportRow };
       } catch(e) {
         return null;
       }
