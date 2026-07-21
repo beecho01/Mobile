@@ -724,15 +724,18 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
           }
         }
 
-        // If we're dragging a selection (either from long-press or selection mode), extend it
+        // If we're dragging a selection (either from long-press or selection mode),
+        // stop Android WebView scrolling and extend the xterm selection.
         if (isDraggingSelection) {
+          e.preventDefault();
+          e.stopPropagation();
           var cell = pixelToCell(clientX, clientY);
           if (cell) {
             extendSelectionToCell(cell);
           }
         }
       }
-    }, { passive: true });
+    }, { passive: false });
 
     terminalElement.addEventListener('touchend', () => {
       if (longPressTimeout) {
