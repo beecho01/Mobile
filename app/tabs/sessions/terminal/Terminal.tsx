@@ -865,11 +865,11 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       var scrollTouchY = null;
       var lineH = terminal._core._renderService.dimensions.css.cell.height || ${baseFontSize * 1.2};
       terminalElement.addEventListener('touchstart', function(e) {
-        if (selectionModeActive || isDraggingSelection) return;
+        if (activeHandle) return;
         if (e.touches.length === 1) scrollTouchY = e.touches[0].clientY;
       }, { passive: true, capture: true });
       terminalElement.addEventListener('touchmove', function(e) {
-        if (selectionModeActive || isDraggingSelection) return;
+        if (activeHandle) return;
         if (scrollTouchY === null || e.touches.length !== 1) return;
         var dy = scrollTouchY - e.touches[0].clientY;
         scrollTouchY = e.touches[0].clientY;
