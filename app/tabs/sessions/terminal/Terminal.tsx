@@ -781,12 +781,17 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       var viewportWidth = window.innerWidth;
       var y = 12;
       if (cell && position) {
+        // Anchor the toolbar above the topmost visible row of the selection.
+        // If the start row is off-screen above the viewport, anchor at the
+        // top of the terminal so the toolbar remains reachable.
         var viewportRow = position.start.y - terminal.buffer.active.viewportY;
+        if (viewportRow < 0) viewportRow = 0;
         y = Math.max(8, rect.top + viewportRow * cell.height - 56);
       }
       termixToolbar.classList.add('visible');
       // Anchor on a small delay so toolbar width is final.
       requestAnimationFrame(function() {
+        if (!termixToolbar) return;
         var barWidth = termixToolbar.offsetWidth || 240;
         var left = Math.max(8, Math.min(viewportWidth / 2 - barWidth / 2, viewportWidth - barWidth - 8));
         termixToolbar.style.left = left + 'px';
