@@ -650,8 +650,28 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
     var startHandle = createHandle('start');
     var endHandle = createHandle('end');
-    var termixToolbar = document.getElementById('termix-toolbar');
     var termixBody = document.body;
+    // The toolbar is defined inline in the HTML, but Android WebView re-runs
+    // layout when the soft keyboard opens or closes. Building the toolbar
+    // once at runtime (and rebuilding it only when the selection state
+    // changes) keeps it stable across keyboard transitions.
+    var termixToolbar = null;
+    (function() {
+      var existing = document.getElementById('termix-toolbar');
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      var bar = document.createElement('div');
+      bar.id = 'termix-toolbar';
+      ['copy', 'paste', 'select-all'].forEach(function(action) {
+        var btn = document.createElement('div');
+        btn.className = 'termix-toolbar-button';
+        btn.setAttribute('data-action', action);
+        btn.textContent = action === 'select-all' ? 'Select All' :
+          action.charAt(0).toUpperCase() + action.slice(1);
+        bar.appendChild(btn);
+      });
+      document.body.appendChild(bar);
+      termixToolbar = bar;
+    })();
 
     function hideHandles() {
       startHandle.style.display = 'none';
