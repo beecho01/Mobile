@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { ChevronDown } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
 import { logActivity, getSnippets } from "../../../main-axios";
 import { showToast } from "../../../utils/toast";
 import { useTerminalCustomization } from "../../../contexts/TerminalCustomizationContext";
