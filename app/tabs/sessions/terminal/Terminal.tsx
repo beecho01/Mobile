@@ -1017,11 +1017,9 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             );
           } catch (e) {}
         },
-        isSelecting: () => {
-          return isSelecting;
-        },
+        isSelecting: () => false,
       }),
-      [totpRequired, showAuthDialog, hostKeyVerification, isSelecting],
+      [totpRequired, showAuthDialog, hostKeyVerification],
     );
 
     return (
