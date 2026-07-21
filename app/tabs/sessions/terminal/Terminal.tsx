@@ -1382,7 +1382,13 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel="Copy selection"
-                  onPress={handleCopySelectionDirect}
+                  onPress={() => {
+                    try {
+                      webViewRef.current?.injectJavaScript(
+                        `window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'copySelection', data: { text: terminal.getSelection() } })); true;`,
+                      );
+                    } catch (e) {}
+                  }}
                   style={{
                     paddingHorizontal: 12,
                     paddingVertical: 8,
