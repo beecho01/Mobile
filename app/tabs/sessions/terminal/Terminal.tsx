@@ -820,13 +820,16 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     });
 
     // Touch-scroll acceleration for iOS WebView
+    // Disabled when in selection mode or actively dragging a selection
     (function() {
       var scrollTouchY = null;
       var lineH = terminal._core._renderService.dimensions.css.cell.height || ${baseFontSize * 1.2};
       terminalElement.addEventListener('touchstart', function(e) {
+        if (selectionModeActive || isDraggingSelection) return;
         if (e.touches.length === 1) scrollTouchY = e.touches[0].clientY;
       }, { passive: true, capture: true });
       terminalElement.addEventListener('touchmove', function(e) {
+        if (selectionModeActive || isDraggingSelection) return;
         if (scrollTouchY === null || e.touches.length !== 1) return;
         var dy = scrollTouchY - e.touches[0].clientY;
         scrollTouchY = e.touches[0].clientY;
