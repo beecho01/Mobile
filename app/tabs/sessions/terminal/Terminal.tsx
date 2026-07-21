@@ -818,7 +818,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       [],
     );
 
-    const handleWebViewMessage = useCallback((event: any) => {
+    const handleWebViewMessage = useCallback(async (event: any) => {
       try {
         const message = JSON.parse(event.nativeEvent.data);
 
