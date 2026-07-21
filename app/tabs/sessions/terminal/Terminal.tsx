@@ -13,6 +13,7 @@ import {
   Dimensions,
   AccessibilityInfo,
   TouchableOpacity,
+  Keyboard,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { ChevronDown } from "lucide-react-native";
