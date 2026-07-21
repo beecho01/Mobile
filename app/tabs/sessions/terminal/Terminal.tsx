@@ -747,10 +747,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     function selectLineAt(clientX, clientY) {
       var cell = pixelToBufferCell(clientX, clientY);
       if (!cell) return;
-      var line = terminal.buffer.active.getLine(cell.y);
-      if (!line) return;
-      var text = line.translateToString(true);
-      terminal.select(0, cell.y, Math.max(1, text.length));
+      // Select the entire rendered row width. The line's translateToString
+      // length reflects the content written, not the visible column count,
+      // so we cap it at terminal.cols to avoid including trailing whitespace.
+      terminal.select(0, cell.y, terminal.cols);
     }
 
     function positionHandle(handle, point, isEnd) {
