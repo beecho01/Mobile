@@ -1180,8 +1180,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       [totpRequired, showAuthDialog, hostKeyVerification, isSelecting],
     );
 
-    // Copy the current terminal selection to the clipboard
-    // Copy selection via WebView injection (returns the selected text on Android)
+    // Copy selection via WebView injection — posts the selected text back to RN
     const handleCopySelectionDirect = useCallback(() => {
       try {
         webViewRef.current?.injectJavaScript(
