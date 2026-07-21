@@ -762,16 +762,24 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       var cell = getCellDimensions();
       if (!cell) return false;
       var viewportRow = point.y - terminal.buffer.active.viewportY;
-      if (viewportRow < 0 || viewportRow >= terminal.rows) {
-        handle.style.display = 'none';
-        return false;
-      }
       var rect = terminalElement.getBoundingClientRect();
       var boundaryX = point.x;
       var boundaryRow = viewportRow;
+      // xterm's end point is exclusive and can sit at column 0 of the next row.
       if (isEnd && boundaryX === 0 && boundaryRow > 0) {
         boundaryX = terminal.cols;
         boundaryRow -= 1;
+      }
+      // Clamp the handle to the visible viewport so it never disappears,
+      // including when Select All is used and the end of the selection is
+      // off-screen below the buffer.
+      if (boundaryRow < 0) {
+        boundaryRow = 0;
+        boundaryX = 0;
+      } else if (boundaryRow >= terminal.rows) {
+        boundaryRow = terminal.rows - 1;
+        if (isEnd) boundaryX = terminal.cols;
+        else boundaryX = Math.min(terminal.cols - 1, Math.max(0, boundaryX));
       }
       handle.style.left = (rect.left + 4 + boundaryX * cell.width) + 'px';
       handle.style.top = (rect.top + 4 + (boundaryRow + 1) * cell.height - 4) + 'px';
