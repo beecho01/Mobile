@@ -1415,7 +1415,13 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel="Select all"
-                  onPress={handleSelectAll}
+                  onPress={() => {
+                    try {
+                      webViewRef.current?.injectJavaScript(
+                        `terminal.selectAll(); window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionToolbar', data: { x: window.innerWidth / 2, y: 40 } })); true;`,
+                      );
+                    } catch (e) {}
+                  }}
                   style={{
                     paddingHorizontal: 12,
                     paddingVertical: 8,
