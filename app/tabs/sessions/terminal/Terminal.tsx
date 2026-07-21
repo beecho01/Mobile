@@ -692,19 +692,22 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       longPressTimeout = setTimeout(() => {
         if (!hasMoved) {
           if (!isCurrentlySelecting) {
-            // Long press: start selection at the touched cell
+            // Long press: start selection at the touched cell and claim all
+            // subsequent movement for selection rather than scrolling.
             var cell = pixelToCell(touchStartX, touchStartY);
             if (cell) {
               dragStartCell = cell;
               dragCurrentCell = cell;
               isDraggingSelection = true;
+              terminalElement.classList.add('selection-mode-active');
+              terminal.select(cell.col, cell.row, 1);
             }
             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
             isCurrentlySelecting = true;
           }
         }
       }, 350);
-    }, { passive: true });
+    }, { passive: false });
 
     terminalElement.addEventListener('touchmove', (e) => {
       if (e.touches && e.touches.length > 0) {
