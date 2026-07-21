@@ -1506,7 +1506,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
                   onPress={() => {
                     try {
                       webViewRef.current?.injectJavaScript(
-                        `window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'copySelection', data: { text: terminal.getSelection() } })); true;`,
+                        `window.copyTerminalSelection && window.copyTerminalSelection(); true;`,
                       );
                     } catch (e) {}
                   }}
