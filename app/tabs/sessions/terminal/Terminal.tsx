@@ -647,6 +647,117 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       };
     }
 
+    // Explicit mobile word/line gestures. Relying on WebView's native DOM
+    // selection is unreliable because xterm renders glyphs to canvas.
+    let gestureStartX = 0;
+    let gestureStartY = 0;
+    let gestureMoved = false;
+    let longPressTriggered = false;
+    let longPressTimer = null;
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+    let tapCount = 0;
+
+    function isWordCharacter(character) {
+      return /[A-Za-z0-9_@#$%&+.,:;=-]/.test(character || '');
+    }
+
+    function selectWordAt(clientX, clientY) {
+      var cell = pixelToBufferCell(clientX, clientY);
+      if (!cell) return;
+      var line = terminal.buffer.active.getLine(cell.y);
+      if (!line) return;
+      var text = line.translateToString(false);
+      if (!text || cell.x >= text.length) return;
+
+      var left = cell.x;
+      var right = cell.x;
+      if (!isWordCharacter(text.charAt(cell.x))) {
+        // Prefer the character immediately to the left when the touch lands
+        // on the right-hand edge of a rendered glyph.
+        if (left > 0 && isWordCharacter(text.charAt(left - 1))) {
+          left -= 1;
+          right = left;
+        } else {
+          terminal.select(cell.x, cell.y, 1);
+          return;
+        }
+      }
+      while (left > 0 && isWordCharacter(text.charAt(left - 1))) left -= 1;
+      while (right + 1 < text.length && isWordCharacter(text.charAt(right + 1))) right += 1;
+      terminal.select(left, cell.y, right - left + 1);
+    }
+
+    function selectLineAt(clientX, clientY) {
+      var cell = pixelToBufferCell(clientX, clientY);
+      if (!cell) return;
+      var line = terminal.buffer.active.getLine(cell.y);
+      if (!line) return;
+      var text = line.translateToString(true);
+      terminal.select(0, cell.y, Math.max(1, text.length));
+    }
+
+    terminalElement.addEventListener('touchstart', function(event) {
+      if (!event.touches || event.touches.length !== 1) return;
+      if (event.target && event.target.closest && event.target.closest('.termix-selection-handle')) return;
+      gestureStartX = event.touches[0].clientX;
+      gestureStartY = event.touches[0].clientY;
+      gestureMoved = false;
+      longPressTriggered = false;
+      if (longPressTimer) clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(function() {
+        if (!gestureMoved && !activeHandle) {
+          longPressTriggered = true;
+          selectWordAt(gestureStartX, gestureStartY);
+        }
+      }, 450);
+    }, { passive: true });
+
+    terminalElement.addEventListener('touchmove', function(event) {
+      if (!event.touches || event.touches.length !== 1) return;
+      var dx = Math.abs(event.touches[0].clientX - gestureStartX);
+      var dy = Math.abs(event.touches[0].clientY - gestureStartY);
+      if (dx > 12 || dy > 12) {
+        gestureMoved = true;
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+    }, { passive: true });
+
+    terminalElement.addEventListener('touchend', function(event) {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      if (gestureMoved || longPressTriggered || activeHandle) return;
+      if (!event.changedTouches || event.changedTouches.length !== 1) return;
+
+      var touch = event.changedTouches[0];
+      var now = Date.now();
+      var nearLastTap = Math.abs(touch.clientX - lastTapX) < 28 &&
+        Math.abs(touch.clientY - lastTapY) < 28;
+      if (now - lastTapTime < 360 && nearLastTap) {
+        tapCount += 1;
+      } else {
+        tapCount = 1;
+      }
+      lastTapTime = now;
+      lastTapX = touch.clientX;
+      lastTapY = touch.clientY;
+
+      if (tapCount === 2) {
+        event.preventDefault();
+        setTimeout(function() { selectWordAt(touch.clientX, touch.clientY); }, 0);
+      } else if (tapCount >= 3) {
+        event.preventDefault();
+        tapCount = 0;
+        setTimeout(function() { selectLineAt(touch.clientX, touch.clientY); }, 0);
+      }
+    }, { passive: false });
+
     function compareCells(a, b) {
       if (a.y !== b.y) return a.y - b.y;
       return a.x - b.x;
