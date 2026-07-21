@@ -1052,6 +1052,8 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
           data: { cols: terminal.cols, rows: terminal.rows }
         }));
       }
+      // The cell grid just changed, so re-anchor any visible selection UI.
+      if (terminal.getSelection()) refreshSelectionUi(false);
     }
 
     window.nativeFit = function() {
