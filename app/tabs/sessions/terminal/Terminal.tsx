@@ -1034,7 +1034,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
           case "copySelection":
             if (message.data.text && message.data.text.length > 0) {
-              Clipboard.copyAsStringAsync(message.data.text).then(() => {
+              Clipboard.setStringAsync(message.data.text).then(() => {
                 setSelectionCopied(true);
                 showToast.success("Copied to clipboard");
                 setTimeout(() => {
