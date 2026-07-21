@@ -568,6 +568,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     let selectionModeActive = false;
     window.setSelectionMode = function(active) {
       selectionModeActive = active;
+      terminalElement.classList.toggle('selection-mode-active', active);
       if (window.ReactNativeWebView) {
         window.ReactNativeWebView.postMessage(JSON.stringify({
           type: 'selectionModeChanged',
