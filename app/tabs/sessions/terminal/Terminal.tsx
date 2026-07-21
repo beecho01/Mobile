@@ -560,6 +560,253 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       return false;
     }, { passive: false });
 
+    // Termius-style selection handles. xterm renders to canvas, so Android's
+    // native text handles are not available; these DOM handles manipulate the
+    // public xterm selection API directly.
+    let isCurrentlySelecting = false;
+    let activeHandle = null;
+    let fixedBoundary = null;
+    let latestHandleTouch = null;
+    let autoScrollTimer = null;
+    let toolbarTimer = null;
+
+    function createSelectionHandle(kind) {
+      var handle = document.createElement('div');
+      handle.className = 'termix-selection-handle termix-selection-handle-' + kind;
+      handle.setAttribute('role', 'slider');
+      handle.setAttribute('aria-label', kind === 'start' ? 'Selection start' : 'Selection end');
+      var stem = document.createElement('div');
+      stem.className = 'termix-selection-handle-stem';
+      var knob = document.createElement('div');
+      knob.className = 'termix-selection-handle-knob';
+      handle.appendChild(stem);
+      handle.appendChild(knob);
+      document.body.appendChild(handle);
+      return handle;
+    }
+
+    var startHandle = createSelectionHandle('start');
+    var endHandle = createSelectionHandle('end');
+
+    function hideSelectionHandles() {
+      startHandle.style.display = 'none';
+      endHandle.style.display = 'none';
+    }
+
+    function getCellDimensions() {
+      try {
+        return terminal._core._renderService.dimensions.css.cell;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function pixelToBufferCell(x, y) {
+      var rect = terminalElement.getBoundingClientRect();
+      var cell = getCellDimensions();
+      if (!cell || !cell.width || !cell.height) return null;
+      var viewportRow = Math.floor((y - rect.top - 4) / cell.height);
+      var col = Math.floor((x - rect.left - 4) / cell.width);
+      col = Math.max(0, Math.min(terminal.cols - 1, col));
+      viewportRow = Math.max(0, Math.min(terminal.rows - 1, viewportRow));
+      return {
+        x: col,
+        y: terminal.buffer.active.viewportY + viewportRow
+      };
+    }
+
+    function compareCells(a, b) {
+      if (a.y !== b.y) return a.y - b.y;
+      return a.x - b.x;
+    }
+
+    function previousCell(cell) {
+      if (cell.x > 0) return { x: cell.x - 1, y: cell.y };
+      return { x: terminal.cols - 1, y: Math.max(0, cell.y - 1) };
+    }
+
+    function nextCell(cell) {
+      if (cell.x < terminal.cols - 1) return { x: cell.x + 1, y: cell.y };
+      return { x: 0, y: cell.y + 1 };
+    }
+
+    function selectRange(start, endExclusive) {
+      if (compareCells(start, endExclusive) >= 0) return;
+      var length = ((endExclusive.y - start.y) * terminal.cols) +
+        (endExclusive.x - start.x);
+      terminal.select(start.x, start.y, Math.max(1, length));
+    }
+
+    function positionHandle(handle, point, isEnd) {
+      var cell = getCellDimensions();
+      if (!cell) return false;
+      var viewportRow = point.y - terminal.buffer.active.viewportY;
+      if (viewportRow < 0 || viewportRow >= terminal.rows) {
+        handle.style.display = 'none';
+        return false;
+      }
+      var rect = terminalElement.getBoundingClientRect();
+      var boundaryX = point.x;
+      var boundaryRow = viewportRow;
+      // xterm's end point is exclusive and can be at column 0 of the next row.
+      if (isEnd && boundaryX === 0 && boundaryRow > 0) {
+        boundaryX = terminal.cols;
+        boundaryRow -= 1;
+      }
+      handle.style.left = (rect.left + 4 + boundaryX * cell.width) + 'px';
+      handle.style.top = (rect.top + 4 + (boundaryRow + 1) * cell.height - 2) + 'px';
+      handle.style.display = 'block';
+      return true;
+    }
+
+    function notifySelectionToolbar(position) {
+      if (!window.ReactNativeWebView) return;
+      var cell = getCellDimensions();
+      var rect = terminalElement.getBoundingClientRect();
+      var y = 12;
+      if (cell && position) {
+        var viewportRow = position.start.y - terminal.buffer.active.viewportY;
+        y = Math.max(8, rect.top + viewportRow * cell.height - 58);
+      }
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'selectionToolbar',
+        data: { x: rect.width / 2, y: y }
+      }));
+    }
+
+    function refreshSelectionUi(showToolbar) {
+      var text = terminal.getSelection();
+      var position = terminal.getSelectionPosition();
+      if (!text || !position) {
+        hideSelectionHandles();
+        if (isCurrentlySelecting && window.ReactNativeWebView) {
+          isCurrentlySelecting = false;
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
+        }
+        return;
+      }
+
+      isCurrentlySelecting = true;
+      positionHandle(startHandle, position.start, false);
+      positionHandle(endHandle, position.end, true);
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
+      }
+      if (showToolbar) notifySelectionToolbar(position);
+    }
+
+    function updateSelectionFromHandle(clientX, clientY) {
+      if (!activeHandle || !fixedBoundary) return;
+      var target = pixelToBufferCell(clientX, clientY);
+      if (!target) return;
+
+      if (activeHandle === 'start') {
+        // Keep at least one character selected and do not allow the handles to cross.
+        if (compareCells(target, fixedBoundary) >= 0) {
+          target = previousCell(fixedBoundary);
+        }
+        selectRange(target, fixedBoundary);
+      } else {
+        var endExclusive = nextCell(target);
+        if (compareCells(endExclusive, fixedBoundary) <= 0) {
+          endExclusive = nextCell(fixedBoundary);
+        }
+        selectRange(fixedBoundary, endExclusive);
+      }
+      refreshSelectionUi(false);
+    }
+
+    function stopAutoScroll() {
+      if (autoScrollTimer) {
+        clearInterval(autoScrollTimer);
+        autoScrollTimer = null;
+      }
+    }
+
+    function updateAutoScroll(clientY) {
+      stopAutoScroll();
+      var rect = terminalElement.getBoundingClientRect();
+      var direction = clientY < rect.top + 48 ? -1 :
+        (clientY > rect.bottom - 48 ? 1 : 0);
+      if (!direction) return;
+      autoScrollTimer = setInterval(function() {
+        if (!activeHandle || !latestHandleTouch) return;
+        terminal.scrollLines(direction);
+        updateSelectionFromHandle(latestHandleTouch.x, latestHandleTouch.y);
+      }, 70);
+    }
+
+    function beginHandleDrag(kind, event) {
+      var position = terminal.getSelectionPosition();
+      if (!position || !event.touches || !event.touches.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activeHandle = kind;
+      fixedBoundary = kind === 'start' ? position.end : position.start;
+      latestHandleTouch = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY
+      };
+      document.body.classList.add('termix-handle-dragging');
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionToolbarHide', data: {} }));
+      }
+    }
+
+    function moveHandle(event) {
+      if (!activeHandle || !event.touches || !event.touches.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      latestHandleTouch = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY
+      };
+      updateSelectionFromHandle(latestHandleTouch.x, latestHandleTouch.y);
+      updateAutoScroll(latestHandleTouch.y);
+    }
+
+    function endHandleDrag(event) {
+      if (!activeHandle) return;
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      activeHandle = null;
+      fixedBoundary = null;
+      latestHandleTouch = null;
+      stopAutoScroll();
+      document.body.classList.remove('termix-handle-dragging');
+      refreshSelectionUi(true);
+    }
+
+    startHandle.addEventListener('touchstart', function(e) { beginHandleDrag('start', e); }, { passive: false });
+    endHandle.addEventListener('touchstart', function(e) { beginHandleDrag('end', e); }, { passive: false });
+    document.addEventListener('touchmove', moveHandle, { passive: false, capture: true });
+    document.addEventListener('touchend', endHandleDrag, { passive: false, capture: true });
+    document.addEventListener('touchcancel', endHandleDrag, { passive: false, capture: true });
+
+    terminal.onSelectionChange(function() {
+      if (toolbarTimer) clearTimeout(toolbarTimer);
+      refreshSelectionUi(false);
+      if (!activeHandle && terminal.getSelection()) {
+        toolbarTimer = setTimeout(function() {
+          refreshSelectionUi(true);
+        }, 120);
+      }
+    });
+
+    terminal.onScroll(function() {
+      if (terminal.getSelection()) refreshSelectionUi(false);
+    });
+
+    window.clearTerminalSelection = function() {
+      terminal.clearSelection();
+      hideSelectionHandles();
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
+      }
+    };
+
 
     function handleResize() {
       fitAddon.fit();
