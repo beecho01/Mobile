@@ -991,7 +991,21 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
             break;
 
           case "copySelection":
-            handleCopyFromWebView(message.data.text);
+            if (message.data.text && message.data.text.length > 0) {
+              Clipboard.copyAsStringAsync(message.data.text).then(() => {
+                setSelectionCopied(true);
+                showToast.success("Copied to clipboard");
+                setTimeout(() => {
+                  setSelectionCopied(false);
+                  setShowSelectionToolbar(false);
+                  webViewRef.current?.injectJavaScript(
+                    `terminal.clearSelection(); window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} })); true;`,
+                  );
+                }, 1200);
+              }).catch(() => {
+                showToast.error("Failed to copy");
+              });
+            }
             break;
 
           case "selectionModeChanged":
