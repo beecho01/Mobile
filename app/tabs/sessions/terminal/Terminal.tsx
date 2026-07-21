@@ -1374,6 +1374,123 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               </TouchableOpacity>
             )}
 
+          {/* Selection mode toggle button */}
+          {isVisible &&
+            connectionState === "connected" &&
+            !totpRequired &&
+            !showAuthDialog &&
+            hostKeyVerification === null && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={selectionMode ? "Exit selection mode" : "Enter selection mode"}
+                onPress={handleToggleSelectionMode}
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  bottom: 16,
+                  width: 40,
+                  height: 40,
+                  borderRadius: 0,
+                  backgroundColor: BACKGROUNDS.CARD,
+                  borderWidth: 1,
+                  borderColor: selectionMode ? ACCENT : "rgba(255,255,255,0.2)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 20,
+                  shadowColor: "#000",
+                  shadowOpacity: 0.3,
+                  shadowRadius: 6,
+                  shadowOffset: { width: 0, height: 3 },
+                  elevation: 6,
+                }}
+              >
+                <Copy size={18} color={selectionMode ? ACCENT : "rgba(255,255,255,0.5)"} />
+              </TouchableOpacity>
+            )}
+
+          {/* Floating selection toolbar */}
+          {showSelectionToolbar &&
+            isVisible &&
+            connectionState === "connected" &&
+            !totpRequired &&
+            !showAuthDialog &&
+            hostKeyVerification === null && (
+              <View
+                style={{
+                  position: "absolute",
+                  left: Math.max(8, Math.min(selectionToolbarPos.x - 90, Dimensions.get("window").width - 180)),
+                  top: Math.max(8, selectionToolbarPos.y),
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: BACKGROUNDS.CARD,
+                  borderWidth: 1,
+                  borderColor: ACCENT,
+                  borderRadius: 4,
+                  paddingVertical: 4,
+                  paddingHorizontal: 4,
+                  zIndex: 30,
+                  shadowColor: "#000",
+                  shadowOpacity: 0.4,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 4 },
+                  elevation: 10,
+                }}
+              >
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy selection"
+                  onPress={handleCopySelectionDirect}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {selectionCopied ? (
+                    <>
+                      <Check size={16} color={ACCENT} />
+                      <Text style={{ color: ACCENT, fontSize: 13, fontWeight: "600" }}>Copied</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={16} color={TEXT_COLORS.PRIMARY} />
+                      <Text style={{ color: TEXT_COLORS.PRIMARY, fontSize: 13, fontWeight: "600" }}>Copy</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <View style={{ width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.15)" }} />
+
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Select all"
+                  onPress={handleSelectAll}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text style={{ color: TEXT_COLORS.PRIMARY, fontSize: 13, fontWeight: "600" }}>Select All</Text>
+                </TouchableOpacity>
+
+                <View style={{ width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.15)" }} />
+
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear selection"
+                  onPress={handleClearSelection}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <X size={16} color={TEXT_COLORS.SECONDARY} />
+                </TouchableOpacity>
+              </View>
+            )}
+
           {/* Spinner shown until terminal has rendered its first output */}
           {(connectionState === "connecting" || connectionState === "reconnecting" || !hasReceivedData) &&
             connectionState !== "failed" && (
