@@ -210,7 +210,42 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
         },
       );
 
-      return () => subscription?.remove();
+      // Forward soft-keyboard show/hide events to the in-WebView toolbar so
+      // it can re-anchor itself above the keyboard. React Native's
+      // `Keyboard` events also fire reliably on Android, which gives us a
+      // single signal independent of the WebView's own resize events.
+      const postKeyboard = (event: {
+        endCoordinates?: { height?: number };
+        duration?: number;
+      }) => {
+        const height = event.endCoordinates?.height || 0;
+        webViewRef.current?.injectJavaScript(
+          "window.__termixKeyboardHeight = " + height + "; " +
+          "var t = document.getElementById('termix-toolbar'); " +
+          "if (t && t.classList.contains('visible')) { " +
+          "  var y = Math.max(8, window.innerHeight - " + height + " - 56 - 12); " +
+          "  t.style.top = y + 'px'; " +
+          "} true;",
+        );
+      };
+      const willShow = Keyboard.addListener(
+        "keyboardWillShow",
+        postKeyboard,
+      );
+      const willHide = Keyboard.addListener(
+        "keyboardWillHide",
+        postKeyboard,
+      );
+      const didShow = Keyboard.addListener("keyboardDidShow", postKeyboard);
+      const didHide = Keyboard.addListener("keyboardDidHide", postKeyboard);
+
+      return () => {
+        subscription?.remove();
+        willShow.remove();
+        willHide.remove();
+        didShow.remove();
+        didHide.remove();
+      };
     }, []);
 
     const handleConnectionFailure = useCallback(
