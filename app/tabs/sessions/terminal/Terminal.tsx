@@ -1412,7 +1412,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               hideKeyboardAccessoryView={true}
               cacheEnabled={false}
               cacheMode="LOAD_NO_CACHE"
-              androidLayerType="hardware"
+              // xterm.js uses multiple canvas layers. Android hardware WebView
+              // composition can ghost/offset those layers when the RN selection
+              // toolbar is overlaid, making terminal rows appear duplicated.
+              androidLayerType="software"
               onMessage={handleWebViewMessage}
               onError={(syntheticEvent) => {
                 const { nativeEvent } = syntheticEvent;
