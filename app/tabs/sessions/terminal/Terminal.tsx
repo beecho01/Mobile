@@ -1015,14 +1015,18 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       setTimeout(handleResize, 100);
     });
 
-    // Touch-scroll acceleration for iOS WebView
+    // Touch-scroll acceleration for iOS WebView.
+    // Suppressed while a selection handle is being dragged so the drag
+    // extends the xterm selection rather than scrolling the terminal.
     (function() {
       var scrollTouchY = null;
       var lineH = terminal._core._renderService.dimensions.css.cell.height || ${baseFontSize * 1.2};
       terminalElement.addEventListener('touchstart', function(e) {
+        if (activeHandle) return;
         if (e.touches.length === 1) scrollTouchY = e.touches[0].clientY;
       }, { passive: true, capture: true });
       terminalElement.addEventListener('touchmove', function(e) {
+        if (activeHandle) return;
         if (scrollTouchY === null || e.touches.length !== 1) return;
         var dy = scrollTouchY - e.touches[0].clientY;
         scrollTouchY = e.touches[0].clientY;
