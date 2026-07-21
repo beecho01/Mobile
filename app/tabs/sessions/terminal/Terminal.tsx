@@ -133,7 +133,6 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       url: string;
       securityKey: string;
     } | null>(null);
-    const [isSelecting, setIsSelecting] = useState(false);
     const [showScrollToBottomButton, setShowScrollToBottomButton] =
       useState(false);
     const [hostKeyVerification, setHostKeyVerification] = useState<{
