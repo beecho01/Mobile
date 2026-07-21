@@ -1037,7 +1037,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
                   setSelectionCopied(false);
                   setShowSelectionToolbar(false);
                   webViewRef.current?.injectJavaScript(
-                    `terminal.clearSelection(); if (!selectionModeActive) terminalElement.classList.remove('selection-mode-active'); window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} })); true;`,
+                    `window.clearTerminalSelection && window.clearTerminalSelection(); true;`,
                   );
                 }, 1200);
               }).catch(() => {
