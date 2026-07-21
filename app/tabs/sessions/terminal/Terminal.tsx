@@ -852,6 +852,20 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
           case "selectionEnd":
             setIsSelecting(false);
+            setShowSelectionToolbar(false);
+            setSelectionCopied(false);
+            break;
+
+          case "selectionToolbar":
+            setShowSelectionToolbar(true);
+            setSelectionToolbarPos({
+              x: message.data.x,
+              y: message.data.y,
+            });
+            break;
+
+          case "selectionCopied":
+            // Already handled by the toolbar button; this is a fallback
             break;
 
           case "scrollState":
