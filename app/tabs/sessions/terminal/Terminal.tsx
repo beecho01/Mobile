@@ -346,6 +346,14 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       -moz-user-select: text;
     }
 
+    /* Android WebView must not turn a selection drag into viewport scrolling. */
+    #terminal.selection-mode-active,
+    #terminal.selection-mode-active .xterm,
+    #terminal.selection-mode-active .xterm-screen {
+      touch-action: none !important;
+      overscroll-behavior: none;
+    }
+
     input, textarea, [contenteditable], .xterm-helper-textarea {
       position: absolute !important;
       left: -9999px !important;
