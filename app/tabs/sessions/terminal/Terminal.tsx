@@ -1357,7 +1357,7 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               <View
                 style={{
                   position: "absolute",
-                  left: Math.max(8, Math.min(selectionToolbarPos.x - 90, Dimensions.get("window").width - 180)),
+                  left: Math.max(8, Math.min(selectionToolbarPos.x - 150, Dimensions.get("window").width - 300)),
                   top: Math.max(8, selectionToolbarPos.y),
                   flexDirection: "row",
                   alignItems: "center",
