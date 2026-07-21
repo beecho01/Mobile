@@ -137,6 +137,12 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     const [isSelecting, setIsSelecting] = useState(false);
     const [showScrollToBottomButton, setShowScrollToBottomButton] =
       useState(false);
+    // Selection mode toggle: when true, drag extends selection instead of scrolling
+    const [selectionMode, setSelectionMode] = useState(false);
+    // Floating toolbar state
+    const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
+    const [selectionToolbarPos, setSelectionToolbarPos] = useState({ x: 0, y: 0 });
+    const [selectionCopied, setSelectionCopied] = useState(false);
     const [hostKeyVerification, setHostKeyVerification] = useState<{
       scenario: "new" | "changed";
       data: HostKeyData;
