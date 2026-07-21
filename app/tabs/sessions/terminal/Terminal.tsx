@@ -1244,6 +1244,23 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               showToast.error("Failed to paste");
             }
             break;
+
+          case "terminal:keyboard-change":
+            if (
+              message.data &&
+              typeof message.data.height === "number" &&
+              webViewRef.current
+            ) {
+              webViewRef.current.injectJavaScript(
+                "window.__termixKeyboardHeight = " + message.data.height + "; " +
+                "var t = document.getElementById('termix-toolbar'); " +
+                "if (t && t.classList.contains('visible')) { " +
+                "  var y = Math.max(8, window.innerHeight - " + message.data.height + " - 56 - 12); " +
+                "  t.style.top = y + 'px'; " +
+                "} true;",
+              );
+            }
+            break;
         }
       } catch (error) {
         console.error("[Terminal] Error parsing WebView message:", error);
