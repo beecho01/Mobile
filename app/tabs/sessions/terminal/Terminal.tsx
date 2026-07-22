@@ -15,7 +15,8 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { WebView } from "react-native-webview";
-import { ChevronDown } from "lucide-react-native";
+import { ChevronDown, Copy, Check } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
 import { logActivity, getSnippets } from "../../../main-axios";
 import { showToast } from "../../../utils/toast";
 import { useTerminalCustomization } from "../../../contexts/TerminalCustomizationContext";
@@ -136,6 +137,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     const [isSelecting, setIsSelecting] = useState(false);
     const [showScrollToBottomButton, setShowScrollToBottomButton] =
       useState(false);
+    // Floating toolbar state
+    const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
+    const [selectionToolbarPos, setSelectionToolbarPos] = useState({ x: 0, y: 0 });
+    const [selectionCopied, setSelectionCopied] = useState(false);
     const [hostKeyVerification, setHostKeyVerification] = useState<{
       scenario: "new" | "changed";
       data: HostKeyData;
@@ -339,6 +344,45 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       -moz-user-select: text;
     }
 
+    /* Canvas terminals cannot use Android's native selection handles, so we
+       provide touch-sized handles aligned to xterm's cell grid. */
+    .termix-selection-handle {
+      position: fixed;
+      display: none;
+      width: 44px;
+      height: 48px;
+      margin-left: -22px;
+      z-index: 1000;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .termix-selection-handle-stem {
+      position: absolute;
+      left: 20px;
+      top: 0;
+      width: 4px;
+      height: 16px;
+      border-radius: 2px;
+      background: ${ACCENT};
+    }
+    .termix-selection-handle-knob {
+      position: absolute;
+      left: 10px;
+      top: 12px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: ${ACCENT};
+      box-shadow: 0 2px 7px rgba(0,0,0,0.45);
+    }
+    body.termix-handle-dragging,
+    body.termix-handle-dragging #terminal,
+    body.termix-handle-dragging .xterm {
+      touch-action: none !important;
+      overscroll-behavior: none;
+    }
+
     input, textarea, [contenteditable], .xterm-helper-textarea {
       position: absolute !important;
       left: -9999px !important;
@@ -400,7 +444,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       },
       allowTransparency: true,
       convertEol: true,
-      screenReaderMode: true,
+      // React Native already exposes terminal output through its dedicated
+      // accessibility view. xterm's DOM accessibility rows conflict with
+      // Android WebView text selection and can visibly duplicate terminal rows.
+      screenReaderMode: false,
       windowsMode: false,
       macOptionIsMeta: false,
       macOptionClickForcesSelection: false,
@@ -545,129 +592,384 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
       return false;
     }, { passive: false });
 
-    let selectionEndTimeout = null;
+    // Termius-style selection handles. xterm renders to canvas, so Android's
+    // native text handles are not available; these DOM handles manipulate the
+    // public xterm selection API directly.
     let isCurrentlySelecting = false;
-    let lastInteractionTime = Date.now();
-    let touchStartTime = 0;
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let hasMoved = false;
-    let longPressTimeout = null;
+    let activeHandle = null;
+    let fixedBoundary = null;
+    let latestHandleTouch = null;
+    let autoScrollTimer = null;
+    let toolbarTimer = null;
 
-    terminalElement.addEventListener('touchstart', (e) => {
-      lastInteractionTime = Date.now();
-      touchStartTime = Date.now();
-      hasMoved = false;
-
-      if (e.touches && e.touches.length > 0) {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-      }
-
-      if (longPressTimeout) {
-        clearTimeout(longPressTimeout);
-      }
-
-      longPressTimeout = setTimeout(() => {
-        if (!hasMoved) {
-          if (!isCurrentlySelecting) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
-            isCurrentlySelecting = true;
-          }
-        }
-      }, 350);
-    }, { passive: true });
-
-    terminalElement.addEventListener('touchmove', (e) => {
-      if (e.touches && e.touches.length > 0) {
-        const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-        const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-
-        if (deltaX > 10 || deltaY > 10) {
-          hasMoved = true;
-          if (longPressTimeout) {
-            clearTimeout(longPressTimeout);
-            longPressTimeout = null;
-          }
-        }
-      }
-    }, { passive: true });
-
-    terminalElement.addEventListener('touchend', () => {
-      if (longPressTimeout) {
-        clearTimeout(longPressTimeout);
-        longPressTimeout = null;
-      }
-
-      const touchDuration = Date.now() - touchStartTime;
-
-      setTimeout(() => {
-        const selection = terminal.getSelection();
-        const hasSelection = selection && selection.length > 0;
-
-        if (hasSelection) {
-          lastInteractionTime = Date.now();
-          if (!isCurrentlySelecting) {
-            isCurrentlySelecting = true;
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
-          }
-        } else if (!isCurrentlySelecting && (touchDuration < 350 || hasMoved)) {
-          lastInteractionTime = Date.now();
-          checkIfDoneSelecting();
-        }
-      }, 100);
-    });
-
-    terminalElement.addEventListener('mousedown', (e) => {
-      lastInteractionTime = Date.now();
-    });
-
-    terminalElement.addEventListener('mouseup', () => {
-      lastInteractionTime = Date.now();
-      checkIfDoneSelecting();
-    });
-
-    function checkIfDoneSelecting() {
-      if (selectionEndTimeout) {
-        clearTimeout(selectionEndTimeout);
-      }
-
-      selectionEndTimeout = setTimeout(() => {
-        const selection = terminal.getSelection();
-        const hasSelection = selection && selection.length > 0;
-
-        if (hasSelection) {
-          if (!isCurrentlySelecting) {
-            isCurrentlySelecting = true;
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
-          }
-        } else if (isCurrentlySelecting) {
-          const timeSinceLastInteraction = Date.now() - lastInteractionTime;
-          if (timeSinceLastInteraction >= 150) {
-            isCurrentlySelecting = false;
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
-          } else {
-            checkIfDoneSelecting();
-          }
-        }
-      }, 100);
+    function createSelectionHandle(kind) {
+      var handle = document.createElement('div');
+      handle.className = 'termix-selection-handle termix-selection-handle-' + kind;
+      handle.setAttribute('role', 'slider');
+      handle.setAttribute('aria-label', kind === 'start' ? 'Selection start' : 'Selection end');
+      var stem = document.createElement('div');
+      stem.className = 'termix-selection-handle-stem';
+      var knob = document.createElement('div');
+      knob.className = 'termix-selection-handle-knob';
+      handle.appendChild(stem);
+      handle.appendChild(knob);
+      document.body.appendChild(handle);
+      return handle;
     }
 
-    terminal.onSelectionChange(() => {
-      const selection = terminal.getSelection();
-      const hasSelection = selection && selection.length > 0;
+    var startHandle = createSelectionHandle('start');
+    var endHandle = createSelectionHandle('end');
 
-      if (hasSelection) {
-        lastInteractionTime = Date.now();
-        if (!isCurrentlySelecting) {
-          isCurrentlySelecting = true;
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
+    function hideSelectionHandles() {
+      startHandle.style.display = 'none';
+      endHandle.style.display = 'none';
+    }
+
+    function getCellDimensions() {
+      try {
+        return terminal._core._renderService.dimensions.css.cell;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function pixelToBufferCell(x, y) {
+      var rect = terminalElement.getBoundingClientRect();
+      var cell = getCellDimensions();
+      if (!cell || !cell.width || !cell.height) return null;
+      var viewportRow = Math.floor((y - rect.top - 4) / cell.height);
+      var col = Math.floor((x - rect.left - 4) / cell.width);
+      col = Math.max(0, Math.min(terminal.cols - 1, col));
+      viewportRow = Math.max(0, Math.min(terminal.rows - 1, viewportRow));
+      return {
+        x: col,
+        y: terminal.buffer.active.viewportY + viewportRow
+      };
+    }
+
+    // Explicit mobile word/line gestures. Relying on WebView's native DOM
+    // selection is unreliable because xterm renders glyphs to canvas.
+    let gestureStartX = 0;
+    let gestureStartY = 0;
+    let gestureMoved = false;
+    let longPressTriggered = false;
+    let longPressTimer = null;
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+    let tapCount = 0;
+
+    function isWordCharacter(character) {
+      return /[A-Za-z0-9_@#$%&+.,:;=-]/.test(character || '');
+    }
+
+    function selectWordAt(clientX, clientY) {
+      var cell = pixelToBufferCell(clientX, clientY);
+      if (!cell) return;
+      var line = terminal.buffer.active.getLine(cell.y);
+      if (!line) return;
+      var text = line.translateToString(false);
+      if (!text || cell.x >= text.length) return;
+
+      var left = cell.x;
+      var right = cell.x;
+      if (!isWordCharacter(text.charAt(cell.x))) {
+        // Prefer the character immediately to the left when the touch lands
+        // on the right-hand edge of a rendered glyph.
+        if (left > 0 && isWordCharacter(text.charAt(left - 1))) {
+          left -= 1;
+          right = left;
+        } else {
+          terminal.select(cell.x, cell.y, 1);
+          return;
         }
-      } else if (isCurrentlySelecting) {
-        lastInteractionTime = Date.now();
-        checkIfDoneSelecting();
+      }
+      while (left > 0 && isWordCharacter(text.charAt(left - 1))) left -= 1;
+      while (right + 1 < text.length && isWordCharacter(text.charAt(right + 1))) right += 1;
+      terminal.select(left, cell.y, right - left + 1);
+    }
+
+    function selectLineAt(clientX, clientY) {
+      var cell = pixelToBufferCell(clientX, clientY);
+      if (!cell) return;
+      var line = terminal.buffer.active.getLine(cell.y);
+      if (!line) return;
+      var text = line.translateToString(true);
+      terminal.select(0, cell.y, Math.max(1, text.length));
+    }
+
+    terminalElement.addEventListener('touchstart', function(event) {
+      if (!event.touches || event.touches.length !== 1) return;
+      if (event.target && event.target.closest && event.target.closest('.termix-selection-handle')) return;
+      gestureStartX = event.touches[0].clientX;
+      gestureStartY = event.touches[0].clientY;
+      gestureMoved = false;
+      longPressTriggered = false;
+      if (longPressTimer) clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(function() {
+        if (!gestureMoved && !activeHandle) {
+          longPressTriggered = true;
+          selectWordAt(gestureStartX, gestureStartY);
+        }
+      }, 450);
+    }, { passive: true });
+
+    terminalElement.addEventListener('touchmove', function(event) {
+      if (!event.touches || event.touches.length !== 1) return;
+      var dx = Math.abs(event.touches[0].clientX - gestureStartX);
+      var dy = Math.abs(event.touches[0].clientY - gestureStartY);
+      if (dx > 12 || dy > 12) {
+        gestureMoved = true;
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+    }, { passive: true });
+
+    terminalElement.addEventListener('touchend', function(event) {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      if (gestureMoved || longPressTriggered || activeHandle) return;
+      if (!event.changedTouches || event.changedTouches.length !== 1) return;
+
+      var touch = event.changedTouches[0];
+      var now = Date.now();
+      var nearLastTap = Math.abs(touch.clientX - lastTapX) < 28 &&
+        Math.abs(touch.clientY - lastTapY) < 28;
+      if (now - lastTapTime < 360 && nearLastTap) {
+        tapCount += 1;
+      } else {
+        tapCount = 1;
+      }
+      lastTapTime = now;
+      lastTapX = touch.clientX;
+      lastTapY = touch.clientY;
+
+      if (tapCount === 2) {
+        event.preventDefault();
+        setTimeout(function() { selectWordAt(touch.clientX, touch.clientY); }, 0);
+      } else if (tapCount >= 3) {
+        event.preventDefault();
+        tapCount = 0;
+        setTimeout(function() { selectLineAt(touch.clientX, touch.clientY); }, 0);
+      }
+    }, { passive: false });
+
+    function compareCells(a, b) {
+      if (a.y !== b.y) return a.y - b.y;
+      return a.x - b.x;
+    }
+
+    function previousCell(cell) {
+      if (cell.x > 0) return { x: cell.x - 1, y: cell.y };
+      return { x: terminal.cols - 1, y: Math.max(0, cell.y - 1) };
+    }
+
+    function nextCell(cell) {
+      if (cell.x < terminal.cols - 1) return { x: cell.x + 1, y: cell.y };
+      return { x: 0, y: cell.y + 1 };
+    }
+
+    function selectRange(start, endExclusive) {
+      if (compareCells(start, endExclusive) >= 0) return;
+      var length = ((endExclusive.y - start.y) * terminal.cols) +
+        (endExclusive.x - start.x);
+      terminal.select(start.x, start.y, Math.max(1, length));
+    }
+
+    function positionHandle(handle, point, isEnd) {
+      var cell = getCellDimensions();
+      if (!cell) return false;
+      var viewportRow = point.y - terminal.buffer.active.viewportY;
+      if (viewportRow < 0 || viewportRow >= terminal.rows) {
+        handle.style.display = 'none';
+        return false;
+      }
+      var rect = terminalElement.getBoundingClientRect();
+      var boundaryX = point.x;
+      var boundaryRow = viewportRow;
+      // xterm's end point is exclusive and can be at column 0 of the next row.
+      if (isEnd && boundaryX === 0 && boundaryRow > 0) {
+        boundaryX = terminal.cols;
+        boundaryRow -= 1;
+      }
+      handle.style.left = (rect.left + 4 + boundaryX * cell.width) + 'px';
+      handle.style.top = (rect.top + 4 + (boundaryRow + 1) * cell.height - 2) + 'px';
+      handle.style.display = 'block';
+      return true;
+    }
+
+    function notifySelectionToolbar(position) {
+      if (!window.ReactNativeWebView) return;
+      var cell = getCellDimensions();
+      var rect = terminalElement.getBoundingClientRect();
+      var y = 12;
+      if (cell && position) {
+        var viewportRow = position.start.y - terminal.buffer.active.viewportY;
+        y = Math.max(8, rect.top + viewportRow * cell.height - 58);
+      }
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'selectionToolbar',
+        data: { x: rect.width / 2, y: y }
+      }));
+    }
+
+    function refreshSelectionUi(showToolbar) {
+      var text = terminal.getSelection();
+      var position = terminal.getSelectionPosition();
+      if (!text || !position) {
+        hideSelectionHandles();
+        if (isCurrentlySelecting && window.ReactNativeWebView) {
+          isCurrentlySelecting = false;
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
+        }
+        return;
+      }
+
+      var selectionJustStarted = !isCurrentlySelecting;
+      isCurrentlySelecting = true;
+      positionHandle(startHandle, position.start, false);
+      positionHandle(endHandle, position.end, true);
+      if (selectionJustStarted && window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionStart', data: {} }));
+      }
+      if (showToolbar) notifySelectionToolbar(position);
+    }
+
+    function updateSelectionFromHandle(clientX, clientY) {
+      if (!activeHandle || !fixedBoundary) return;
+      var target = pixelToBufferCell(clientX, clientY);
+      if (!target) return;
+
+      if (activeHandle === 'start') {
+        // Keep at least one character selected and do not allow the handles to cross.
+        if (compareCells(target, fixedBoundary) >= 0) {
+          target = previousCell(fixedBoundary);
+        }
+        selectRange(target, fixedBoundary);
+      } else {
+        var endExclusive = nextCell(target);
+        if (compareCells(endExclusive, fixedBoundary) <= 0) {
+          endExclusive = nextCell(fixedBoundary);
+        }
+        selectRange(fixedBoundary, endExclusive);
+      }
+      refreshSelectionUi(false);
+    }
+
+    function stopAutoScroll() {
+      if (autoScrollTimer) {
+        clearInterval(autoScrollTimer);
+        autoScrollTimer = null;
+      }
+    }
+
+    function updateAutoScroll(clientY) {
+      stopAutoScroll();
+      var rect = terminalElement.getBoundingClientRect();
+      var direction = clientY < rect.top + 48 ? -1 :
+        (clientY > rect.bottom - 48 ? 1 : 0);
+      if (!direction) return;
+      autoScrollTimer = setInterval(function() {
+        if (!activeHandle || !latestHandleTouch) return;
+        terminal.scrollLines(direction);
+        updateSelectionFromHandle(latestHandleTouch.x, latestHandleTouch.y);
+      }, 70);
+    }
+
+    function beginHandleDrag(kind, event) {
+      var position = terminal.getSelectionPosition();
+      if (!position || !event.touches || !event.touches.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activeHandle = kind;
+      fixedBoundary = kind === 'start' ? position.end : position.start;
+      latestHandleTouch = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY
+      };
+      document.body.classList.add('termix-handle-dragging');
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionToolbarHide', data: {} }));
+      }
+    }
+
+    function moveHandle(event) {
+      if (!activeHandle || !event.touches || !event.touches.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      latestHandleTouch = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY
+      };
+      updateSelectionFromHandle(latestHandleTouch.x, latestHandleTouch.y);
+      updateAutoScroll(latestHandleTouch.y);
+    }
+
+    function endHandleDrag(event) {
+      if (!activeHandle) return;
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      activeHandle = null;
+      fixedBoundary = null;
+      latestHandleTouch = null;
+      stopAutoScroll();
+      document.body.classList.remove('termix-handle-dragging');
+      refreshSelectionUi(true);
+    }
+
+    startHandle.addEventListener('touchstart', function(e) { beginHandleDrag('start', e); }, { passive: false });
+    endHandle.addEventListener('touchstart', function(e) { beginHandleDrag('end', e); }, { passive: false });
+    document.addEventListener('touchmove', moveHandle, { passive: false, capture: true });
+    document.addEventListener('touchend', endHandleDrag, { passive: false, capture: true });
+    document.addEventListener('touchcancel', endHandleDrag, { passive: false, capture: true });
+
+    terminal.onSelectionChange(function() {
+      if (toolbarTimer) clearTimeout(toolbarTimer);
+      refreshSelectionUi(false);
+      // Force all xterm canvas layers to repaint together. This avoids stale
+      // glyph layers remaining visible after Android redraws the selection.
+      requestAnimationFrame(function() {
+        try { terminal.refresh(0, terminal.rows - 1); } catch (e) {}
+      });
+      if (!activeHandle && terminal.getSelection()) {
+        toolbarTimer = setTimeout(function() {
+          refreshSelectionUi(true);
+        }, 120);
       }
     });
+
+    terminal.onScroll(function() {
+      if (terminal.getSelection()) refreshSelectionUi(false);
+    });
+
+    window.selectAllTerminal = function() {
+      terminal.selectAll();
+    };
+
+    window.copyTerminalSelection = function() {
+      var text = terminal.getSelection();
+      if (text && window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'copySelection',
+          data: { text: text }
+        }));
+      }
+    };
+
+    window.clearTerminalSelection = function() {
+      terminal.clearSelection();
+      hideSelectionHandles();
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selectionEnd', data: {} }));
+      }
+    };
+
 
     function handleResize() {
       fitAddon.fit();
@@ -690,13 +992,16 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
     });
 
     // Touch-scroll acceleration for iOS WebView
+    // Disabled when in selection mode or actively dragging a selection
     (function() {
       var scrollTouchY = null;
       var lineH = terminal._core._renderService.dimensions.css.cell.height || ${baseFontSize * 1.2};
       terminalElement.addEventListener('touchstart', function(e) {
+        if (activeHandle) return;
         if (e.touches.length === 1) scrollTouchY = e.touches[0].clientY;
       }, { passive: true, capture: true });
       terminalElement.addEventListener('touchmove', function(e) {
+        if (activeHandle) return;
         if (scrollTouchY === null || e.touches.length !== 1) return;
         var dy = scrollTouchY - e.touches[0].clientY;
         scrollTouchY = e.touches[0].clientY;
@@ -845,6 +1150,38 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
 
           case "selectionEnd":
             setIsSelecting(false);
+            setShowSelectionToolbar(false);
+            setSelectionCopied(false);
+            break;
+
+          case "selectionToolbar":
+            setShowSelectionToolbar(true);
+            setSelectionToolbarPos({
+              x: message.data.x,
+              y: message.data.y,
+            });
+            break;
+
+          case "copySelection":
+            if (message.data.text && message.data.text.length > 0) {
+              Clipboard.setStringAsync(message.data.text).then(() => {
+                setSelectionCopied(true);
+                showToast.success("Copied to clipboard");
+                setTimeout(() => {
+                  setSelectionCopied(false);
+                  setShowSelectionToolbar(false);
+                  webViewRef.current?.injectJavaScript(
+                    `window.clearTerminalSelection && window.clearTerminalSelection(); true;`,
+                  );
+                }, 1200);
+              }).catch(() => {
+                showToast.error("Failed to copy");
+              });
+            }
+            break;
+
+          case "selectionToolbarHide":
+            setShowSelectionToolbar(false);
             break;
 
           case "scrollState":
@@ -1080,7 +1417,10 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               hideKeyboardAccessoryView={true}
               cacheEnabled={false}
               cacheMode="LOAD_NO_CACHE"
-              androidLayerType="hardware"
+              // xterm.js uses multiple canvas layers. Android hardware WebView
+              // composition can ghost/offset those layers when the RN selection
+              // toolbar is overlaid, making terminal rows appear duplicated.
+              androidLayerType="software"
               onMessage={handleWebViewMessage}
               onError={(syntheticEvent) => {
                 const { nativeEvent } = syntheticEvent;
@@ -1142,6 +1482,115 @@ const TerminalComponent = forwardRef<TerminalHandle, TerminalProps>(
               >
                 <ChevronDown size={20} color={ACCENT} />
               </TouchableOpacity>
+            )}
+
+          {/* Floating selection toolbar */}
+          {showSelectionToolbar &&
+            isVisible &&
+            connectionState === "connected" &&
+            !totpRequired &&
+            !showAuthDialog &&
+            hostKeyVerification === null && (
+              <View
+                style={{
+                  position: "absolute",
+                  left: Math.max(8, Math.min(selectionToolbarPos.x - 150, Dimensions.get("window").width - 300)),
+                  top: Math.max(8, selectionToolbarPos.y),
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: BACKGROUNDS.CARD,
+                  borderWidth: 1,
+                  borderColor: ACCENT,
+                  borderRadius: 4,
+                  paddingVertical: 4,
+                  paddingHorizontal: 4,
+                  zIndex: 30,
+                  shadowColor: "#000",
+                  shadowOpacity: 0.4,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 4 },
+                  elevation: 10,
+                }}
+              >
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy selection"
+                  onPress={() => {
+                    try {
+                      webViewRef.current?.injectJavaScript(
+                        `window.copyTerminalSelection && window.copyTerminalSelection(); true;`,
+                      );
+                    } catch (e) {}
+                  }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {selectionCopied ? (
+                    <>
+                      <Check size={16} color={ACCENT} />
+                      <Text style={{ color: ACCENT, fontSize: 13, fontWeight: "600" }}>Copied</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={16} color={TEXT_COLORS.PRIMARY} />
+                      <Text style={{ color: TEXT_COLORS.PRIMARY, fontSize: 13, fontWeight: "600" }}>Copy</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <View style={{ width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.15)" }} />
+
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Paste clipboard"
+                  onPress={async () => {
+                    try {
+                      const clipboardText = await Clipboard.getStringAsync();
+                      if (clipboardText) {
+                        wsManagerRef.current?.sendInput(clipboardText);
+                        webViewRef.current?.injectJavaScript(
+                          `window.clearTerminalSelection && window.clearTerminalSelection(); true;`,
+                        );
+                        setShowSelectionToolbar(false);
+                      }
+                    } catch (error) {
+                      showToast.error("Failed to paste");
+                    }
+                  }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text style={{ color: TEXT_COLORS.PRIMARY, fontSize: 13, fontWeight: "600" }}>Paste</Text>
+                </TouchableOpacity>
+
+                <View style={{ width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.15)" }} />
+
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Select all"
+                  onPress={() => {
+                    try {
+                      webViewRef.current?.injectJavaScript(
+                        `window.selectAllTerminal && window.selectAllTerminal(); true;`,
+                      );
+                    } catch (e) {}
+                  }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text style={{ color: TEXT_COLORS.PRIMARY, fontSize: 13, fontWeight: "600" }}>Select All</Text>
+                </TouchableOpacity>
+
+              </View>
             )}
 
           {/* Spinner shown until terminal has rendered its first output */}
